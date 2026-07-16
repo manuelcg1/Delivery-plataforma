@@ -1,0 +1,16 @@
+.env
+.idea/
+.vscode/
+.DS_Store
+*.log
+backend/target/
+admin-web/node_modules/
+admin-web/.next/
+apps/shared_flutter/.dart_tool/
+apps/shared_flutter/build/
+apps/shared_flutter/android/
+apps/shared_flutter/ios/
+apps/shared_flutter/windows/
+apps/shared_flutter/linux/
+apps/shared_flutter/macos/
+apps/shared_flutter/web/
