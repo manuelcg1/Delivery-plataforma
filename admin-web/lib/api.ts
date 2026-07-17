@@ -1,30 +1,39 @@
-export type ApiHealth = {
-  status: string;
-  service: string;
-  version: string;
-  timestamp: string;
-};
+'use client';
 
-function isApiHealth(value: unknown): value is ApiHealth {
-  if (typeof value !== 'object' || value === null) return false;
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+let accessToken: string | null = null;
 
-  const health = value as Record<string, unknown>;
-  return (
-    typeof health.status === 'string' &&
-    typeof health.service === 'string' &&
-    typeof health.version === 'string' &&
-    typeof health.timestamp === 'string'
-  );
+export type FieldErrors = Record<string, string>;
+
+export class ApiClientError extends Error {
+  constructor(message: string, public readonly details: FieldErrors = {}) {
+    super(message);
+    this.name = 'ApiClientError';
+  }
 }
 
-export async function getApiHealth(): Promise<ApiHealth | null> {
-  const baseUrl = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
-  try {
-    const response = await fetch(`${baseUrl}/api/v1/public/health`, { cache: 'no-store' });
-    if (!response.ok) return null;
-    const payload: unknown = await response.json();
-    return isApiHealth(payload) ? payload : null;
-  } catch {
-    return null;
+export function setAccessToken(value: string | null) {
+  accessToken = value;
+}
+
+export async function api<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+
+  const response = await fetch(`${API_URL}${path}`, { ...init, headers, credentials: 'include' });
+  if (response.status === 401 && retry && path !== '/api/v1/auth/refresh') {
+    const refreshed = await fetch(`${API_URL}/api/v1/auth/refresh`, { method: 'POST', credentials: 'include' });
+    if (refreshed.ok) {
+      const data = await refreshed.json();
+      setAccessToken(data.accessToken);
+      return api<T>(path, init, false);
+    }
   }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new ApiClientError(payload.message ?? 'No se pudo completar la operación', payload.details ?? {});
+  }
+  return response.status === 204 ? undefined as T : response.json();
 }

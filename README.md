@@ -1,70 +1,26 @@
-# Delivery Platform v0.1 — Foundation
+# Delivery Platform v0.3 — Commerce Catalog
 
-Base ejecutable para una plataforma SaaS de delivery multicliente.
+Monolito modular SaaS multicliente con Spring Boot 3/Java 21, PostgreSQL, Redis y panel administrativo Next.js. Incluye Identity v0.2 y el núcleo de Commerce Catalog: comercios, sucursales, categorías, productos, variantes, publicación, inventario y catálogo público.
 
-## Incluye
-
-- Spring Boot + Java 21
-- PostgreSQL 16 y Flyway
-- Redis 7
-- Next.js + TypeScript
-- MinIO para archivos
-- Mailpit para correo de desarrollo
-- Docker Compose
-- Base de datos multicliente inicial
-- Health checks
-- Convenciones para Codex en `AGENTS.md`
-
-## Requisitos
-
-- Docker Desktop funcionando
-- Git
-- 4 GB de memoria disponibles para Docker recomendados
-
-## Inicio rápido
-
-En PowerShell:
+## Ejecutar
 
 ```powershell
-cd C:\Users\Manuel\delivery-platafor
 Copy-Item .env.example .env
+# Complete JWT_SECRET con al menos 32 caracteres
 docker compose up -d --build
-```
-
-La primera compilación puede tardar varios minutos. Para seguirla en pantalla:
-
-```powershell
-docker compose up --build
-```
-
-## Verificación
-
-```powershell
 docker compose ps
-docker compose logs backend --tail 100
-docker compose logs admin-web --tail 100
 ```
 
-Servicios:
+Servicios: panel `http://localhost:3000`, API/health `http://localhost:8080/api/v1/public/health`, Actuator `http://localhost:8080/actuator/health`, Swagger `http://localhost:8080/swagger-ui/index.html`, Mailpit `http://localhost:8025`, MinIO `http://localhost:9001`.
 
-- Panel: http://localhost:3000
-- API: http://localhost:8080/api/v1/public/health
-- Actuator: http://localhost:8080/actuator/health
-- MinIO: http://localhost:9001
-- Mailpit: http://localhost:8025
-
-## Detener
+## Desarrollo
 
 ```powershell
-docker compose down
+cd backend; mvn test
+cd ../admin-web; npm run lint; npm run build
+cd ..; docker compose config
 ```
 
-Para eliminar también los datos locales:
+No se crean credenciales demo. Registre el primer tenant en `/register`. El access token vive en memoria; el refresh token se almacena exclusivamente en cookie HttpOnly y su hash SHA-256 en PostgreSQL. En producción use HTTPS, `COOKIE_SECURE=true`, un secreto aleatorio y orígenes CORS explícitos.
 
-```powershell
-docker compose down -v
-```
-
-## Próxima fase
-
-La fase v0.2 implementará identidad: registro de empresa, administrador inicial, inicio de sesión, JWT, refresh tokens, roles, permisos y auditoría.
+Consulte [docs/IDENTITY.md](docs/IDENTITY.md), [docs/API.md](docs/API.md) y [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import './styles.css';
+import './identity.css';
+import './catalog.css';
+import {AuthProvider} from '@/lib/auth';
 
 export const metadata: Metadata = {
   title: 'Delivery Platform',
@@ -9,7 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body><AuthProvider>{children}</AuthProvider></body>
     </html>
   );
 }

@@ -1,0 +1,2 @@
+.pagination{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-top:18px}.pagination button:disabled{opacity:.45;cursor:not-allowed}
+.image-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem}.image-grid article{display:grid;gap:.65rem;padding:.75rem;border:1px solid #dbe3ef;border-radius:12px}.image-grid img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;background:#eef2f7}

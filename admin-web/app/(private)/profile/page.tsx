@@ -1,0 +1,1 @@
+'use client';import{useAuth}from'@/lib/auth';export default function Profile(){const{user}=useAuth();return <><h1>Mi perfil</h1><section className="panel"><h2>{user?.firstName} {user?.lastName}</h2><p>{user?.email}</p><p>Empresa: {user?.tenant.name}</p><p>Roles: {user?.roles.join(', ')}</p></section></>}

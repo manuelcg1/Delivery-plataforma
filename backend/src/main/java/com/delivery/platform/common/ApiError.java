@@ -1,9 +1,4 @@
 package com.delivery.platform.common;
-
 import java.time.Instant;
-
-public record ApiError(String code, String message, Instant timestamp) {
-    public static ApiError of(String code, String message) {
-        return new ApiError(code, message, Instant.now());
-    }
-}
+import java.util.Map;
+public record ApiError(Instant timestamp,int status,String error,String message,String path,Map<String,String> details) {}

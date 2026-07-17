@@ -22,6 +22,23 @@ spring:
       password: ${REDIS_PASSWORD:delivery_redis_password}
   jackson:
     time-zone: UTC
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+  servlet:
+    multipart:
+      max-file-size: ${CATALOG_MAX_IMAGE_SIZE_MB:5}MB
+      max-request-size: ${CATALOG_MAX_IMAGE_SIZE_MB:5}MB
+
+identity:
+  jwt-secret: ${JWT_SECRET:development-only-secret-key-change-me-32-bytes}
+  access-minutes: ${JWT_ACCESS_EXPIRATION_MINUTES:15}
+  refresh-days: ${JWT_REFRESH_EXPIRATION_DAYS:7}
+  reset-minutes: ${PASSWORD_RESET_EXPIRATION_MINUTES:30}
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  cookie-secure: ${COOKIE_SECURE:false}
+  login-max-attempts: ${LOGIN_MAX_ATTEMPTS:5}
+  login-lock-minutes: ${LOGIN_LOCK_MINUTES:15}
 
 server:
   port: 8080

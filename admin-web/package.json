@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node ./node_modules/vitest/vitest.mjs run"
   },
   "dependencies": {
     "next": "15.5.20",
@@ -14,11 +15,17 @@
     "react-dom": "19.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "22.13.10",
     "@types/react": "19.0.10",
     "@types/react-dom": "19.0.4",
+    "@vitejs/plugin-react": "^6.0.3",
     "eslint": "9.39.5",
     "eslint-config-next": "15.5.20",
-    "typescript": "5.8.2"
+    "jsdom": "^29.1.1",
+    "typescript": "5.8.2",
+    "vitest": "^4.1.10"
   }
 }

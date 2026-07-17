@@ -20,6 +20,7 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:8080
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN npm test
 RUN npm run build
 
 FROM node:20.19.5-alpine3.21 AS runner
