@@ -1,0 +1,3 @@
+package com.delivery.platform.orders.application;
+import com.delivery.platform.orders.domain.OrderModels.OrderSummary;import java.math.*;
+public final class OrderCalculator {private OrderCalculator(){} public static OrderSummary calculate(BigDecimal subtotal,BigDecimal tax,BigDecimal discount,BigDecimal deliveryFee,String currency){BigDecimal s=money(subtotal),t=money(tax),d=money(discount),f=money(deliveryFee);return new OrderSummary(s,d,t,f,s.add(t).add(f).subtract(d).max(BigDecimal.ZERO).setScale(2,RoundingMode.HALF_UP),currency);}private static BigDecimal money(BigDecimal x){return (x==null?BigDecimal.ZERO:x).setScale(2,RoundingMode.HALF_UP);}}

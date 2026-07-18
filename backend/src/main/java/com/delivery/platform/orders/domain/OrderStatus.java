@@ -1,0 +1,2 @@
+package com.delivery.platform.orders.domain;
+public enum OrderStatus {DRAFT,PENDING,CONFIRMED,PREPARING,READY,ASSIGNED,PICKED_UP,ON_THE_WAY,DELIVERED,CANCELLED,REJECTED}

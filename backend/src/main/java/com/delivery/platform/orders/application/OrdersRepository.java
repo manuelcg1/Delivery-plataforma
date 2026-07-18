@@ -1,0 +1,9 @@
+package com.delivery.platform.orders.application;
+import com.delivery.platform.orders.domain.OrderModels.*;import java.math.BigDecimal;import java.util.*;
+public interface OrdersRepository {
+ Optional<Cart> activeCart(UUID tenantId,UUID customerId); Cart cart(UUID tenantId,UUID customerId,UUID id); Cart createCart(UUID tenantId,UUID customerId,UUID merchantId,UUID branchId,String currency);
+ void addItem(UUID tenantId,UUID cartId,UUID productId,String name,int quantity,BigDecimal price,String notes);void updateItem(UUID tenantId,UUID cartId,UUID itemId,int quantity,String notes);void deleteItem(UUID tenantId,UUID cartId,UUID itemId);void clearCart(UUID tenantId,UUID cartId);void saveTotals(UUID tenantId,UUID cartId,OrderSummary totals);
+ ProductSnapshot product(UUID tenantId,UUID merchantId,UUID branchId,UUID productId);DeliveryAddress address(UUID tenantId,UUID customerId,UUID addressId);List<DeliveryAddress> addresses(UUID tenantId,UUID customerId);DeliveryAddress createAddress(UUID tenantId,UUID customerId,DeliveryAddress address);
+ Order createOrder(UUID tenantId,UUID customerId,Cart cart,UUID addressId,String notes);List<Order> orders(UUID tenantId,UUID customerId);Order order(UUID tenantId,UUID customerId,UUID orderId);void updateStatus(UUID tenantId,UUID customerId,UUID orderId,com.delivery.platform.orders.domain.OrderStatus status,String notes);void checkoutCart(UUID tenantId,UUID cartId);void audit(UUID tenantId,UUID userId,String action,String type,UUID id);
+ record ProductSnapshot(UUID id,UUID merchantId,String name,BigDecimal price,String currency,BigDecimal taxRate,boolean trackInventory,BigDecimal stock,boolean productAvailable,boolean branchAvailable,String productStatus,String merchantStatus,String branchStatus){}
+}

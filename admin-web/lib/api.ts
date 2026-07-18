@@ -32,8 +32,11 @@ export async function api<T>(path: string, init: RequestInit = {}, retry = true)
   }
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
     throw new ApiClientError(payload.message ?? 'No se pudo completar la operación', payload.details ?? {});
   }
-  return response.status === 204 ? undefined as T : response.json();
+  if (response.status === 204) return undefined as T;
+  const text = await response.text();
+  return (text ? JSON.parse(text) : null) as T;
 }

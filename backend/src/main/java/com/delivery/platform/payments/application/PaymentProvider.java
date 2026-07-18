@@ -1,0 +1,1 @@
+package com.delivery.platform.payments.application;import java.math.BigDecimal;public interface PaymentProvider{String code();Result process(String reference,BigDecimal amount,String currency);record Result(boolean approved,String providerPaymentId,String transactionId,String failureCode,String failureMessage){}}

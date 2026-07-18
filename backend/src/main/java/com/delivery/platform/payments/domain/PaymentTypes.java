@@ -1,0 +1,1 @@
+package com.delivery.platform.payments.domain;public final class PaymentTypes{private PaymentTypes(){}public enum Method{CASH_ON_DELIVERY,CARD,DIGITAL_WALLET,BANK_TRANSFER,OTHER}public enum Status{PENDING,PROCESSING,AUTHORIZED,PAID,FAILED,CANCELLED,PARTIALLY_REFUNDED,REFUNDED,EXPIRED}public enum TransactionType{AUTHORIZATION,CAPTURE,SALE,VOID,REFUND,FAILED}}
