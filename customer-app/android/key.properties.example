@@ -1,0 +1,5 @@
+# Copiar como android/key.properties. No versionar el archivo real ni el keystore.
+storeFile=C:/secure/delivery-customer-upload.jks
+storePassword=CHANGE_ME
+keyAlias=delivery-customer-upload
+keyPassword=CHANGE_ME

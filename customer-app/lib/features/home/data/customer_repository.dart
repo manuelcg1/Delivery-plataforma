@@ -1,0 +1,134 @@
+import '../../../core/api/api_client.dart';
+
+class Address {
+  const Address({
+    required this.id,
+    required this.label,
+    required this.recipientName,
+    required this.phone,
+    required this.addressLine,
+    required this.district,
+    required this.isDefault,
+  });
+  final String id, label, recipientName, phone, addressLine, district;
+  final bool isDefault;
+  factory Address.fromJson(Map<String, dynamic> j) => Address(
+        id: j['id'] as String,
+        label: j['label'] as String,
+        recipientName: j['recipientName'] as String,
+        phone: j['phone'] as String,
+        addressLine: j['addressLine'] as String,
+        district: j['district']?.toString() ?? '',
+        isDefault: (j['isDefault'] as bool?) ?? false,
+      );
+}
+
+class Merchant {
+  const Merchant({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.description,
+    required this.branchId,
+    required this.branchName,
+    required this.currency,
+  });
+  final String id, code, name, description, branchId, branchName, currency;
+  factory Merchant.fromJson(Map<String, dynamic> j) => Merchant(
+        id: j['id'] as String,
+        code: j['code'] as String,
+        name: j['name'] as String,
+        description: j['description']?.toString() ?? '',
+        branchId: j['branchId'] as String,
+        branchName: j['branchName'] as String,
+        currency: j['currency'] as String,
+      );
+}
+
+class Product {
+  const Product({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.price,
+    required this.currency,
+  });
+  final String id, name, description, currency;
+  final double price;
+  factory Product.fromJson(Map<String, dynamic> j) => Product(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        description: j['description']?.toString() ?? '',
+        price: (j['price'] as num).toDouble(),
+        currency: j['currency'] as String,
+      );
+}
+
+class Favorite {
+  const Favorite(
+      {required this.id,
+      required this.name,
+      required this.description,
+      required this.merchantId,
+      required this.productId});
+  final String id, name, description;
+  final String? merchantId, productId;
+  factory Favorite.fromJson(Map<String, dynamic> json) => Favorite(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      description: json['description']?.toString() ?? '',
+      merchantId: json['merchantId'] as String?,
+      productId: json['productId'] as String?);
+}
+
+class CustomerRepository {
+  CustomerRepository(this.api);
+  final ApiClient api;
+  Future<List<Address>> addresses() async {
+    final r = await api.dio.get<List<dynamic>>('/api/v1/customer/addresses');
+    return r.data!
+        .map((e) => Address.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Address> addAddress(Map<String, dynamic> data) async {
+    final r = await api.dio.post<Map<String, dynamic>>(
+      '/api/v1/customer/addresses',
+      data: data,
+    );
+    return Address.fromJson(r.data!);
+  }
+
+  Future<List<Merchant>> merchants([String search = '']) async {
+    final r = await api.dio.get<List<dynamic>>(
+      '/api/v1/customer/merchants',
+      queryParameters: {'search': search},
+    );
+    return r.data!
+        .map((e) => Merchant.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<Product>> products(String branchId) async {
+    final r = await api.dio.get<List<dynamic>>(
+      '/api/v1/public/catalog/branches/$branchId/products',
+    );
+    return r.data!
+        .map((e) => Product.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<Favorite>> favorites() async {
+    final response =
+        await api.dio.get<List<dynamic>>('/api/v1/customer/favorites');
+    return response.data!
+        .map((item) => Favorite.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> addMerchantFavorite(String merchantId) =>
+      api.dio.post<void>('/api/v1/customer/favorites',
+          data: {'merchantId': merchantId});
+  Future<void> removeFavorite(String id) =>
+      api.dio.delete<void>('/api/v1/customer/favorites/$id');
+}
