@@ -19,8 +19,19 @@ void main() {
       'orderNumber': 'ORD-1',
       'status': 'CONFIRMED',
       'total': 30,
-      'currency': 'PEN'
+      'currency': 'PEN',
+      'createdAt': '2026-07-21T14:30:00Z'
     });
     expect(order.status, 'CONFIRMED');
+    expect(order.createdAt, '2026-07-21T14:30:00Z');
+  });
+  test('maps delivery events used by the customer timeline', () {
+    final event = DeliveryStatusEvent.fromJson({
+      'id': 'event-1',
+      'status': 'IN_TRANSIT',
+      'createdAt': '2026-07-22T15:45:00Z',
+    });
+    expect(event.status, 'IN_TRANSIT');
+    expect(event.createdAt, '2026-07-22T15:45:00Z');
   });
 }

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/providers.dart';
+import '../core/widgets/app_states.dart';
 import '../features/auth/presentation/auth_controller.dart';
 import '../features/auth/presentation/auth_page.dart';
+import '../features/courier/presentation/courier_pages.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/orders/presentation/commerce_pages.dart';
 import 'theme/app_theme.dart';
@@ -16,7 +19,11 @@ class CustomerApp extends ConsumerWidget {
       title: 'Delivery',
       theme: AppTheme.light(),
       home: session.when(
-        data: (user) => user == null ? const AuthPage() : const MainShell(),
+        data: (user) => user == null
+            ? const AuthPage()
+            : user.isCourier
+                ? const CourierShell()
+                : const MainShell(),
         loading: () => const SplashPage(),
         error: (_, __) => const AuthPage(),
       ),
@@ -41,14 +48,13 @@ class SplashPage extends StatelessWidget {
       );
 }
 
-class MainShell extends StatefulWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
   @override
-  State<MainShell> createState() => _MainShellState();
+  ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
-  int index = 0;
+class _MainShellState extends ConsumerState<MainShell> {
   final pages = const [
     HomePage(),
     SearchPage(),
@@ -57,44 +63,48 @@ class _MainShellState extends State<MainShell> {
     ProfilePage(),
   ];
   @override
-  Widget build(BuildContext context) => Scaffold(
-        body: SafeArea(
-          child: IndexedStack(index: index, children: pages),
-        ),
-        floatingActionButton: index == 0
-            ? FloatingActionButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(builder: (_) => const CartPage()),
-                ),
-                child: const Icon(Icons.shopping_cart_outlined),
-              )
-            : null,
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: index,
-          onDestinationSelected: (value) => setState(() => index = value),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home),
-              label: 'Inicio',
-            ),
-            NavigationDestination(icon: Icon(Icons.search), label: 'Buscar'),
-            NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined),
-              label: 'Pedidos',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.favorite_border),
-              label: 'Favoritos',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              label: 'Perfil',
-            ),
-          ],
-        ),
-      );
+  Widget build(BuildContext context) {
+    final index = ref.watch(customerMainTabProvider);
+    return Scaffold(
+      body: SafeArea(
+        child: IndexedStack(index: index, children: pages),
+      ),
+      floatingActionButton: index == 0
+          ? FloatingActionButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(builder: (_) => const CartPage()),
+              ),
+              child: const Icon(Icons.shopping_cart_outlined),
+            )
+          : null,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: index,
+        onDestinationSelected: (value) =>
+            ref.read(customerMainTabProvider.notifier).state = value,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Inicio',
+          ),
+          NavigationDestination(icon: Icon(Icons.search), label: 'Buscar'),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            label: 'Pedidos',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.favorite_border),
+            label: 'Favoritos',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            label: 'Perfil',
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class SearchPage extends ConsumerStatefulWidget {
@@ -148,12 +158,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 class FavoritesPage extends ConsumerWidget {
   const FavoritesPage({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) => FutureBuilder(
-        future: ref.read(customerRepositoryProvider).favorites(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done)
-            return const Center(child: CircularProgressIndicator());
-          final items = snapshot.data ?? [];
+  Widget build(BuildContext context, WidgetRef ref) => ref
+      .watch(favoritesProvider)
+      .when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => ErrorState(
+          message: error.toString(),
+          onRetry: () => ref.invalidate(favoritesProvider),
+        ),
+        data: (items) {
           if (items.isEmpty)
             return const Center(
                 child:
@@ -172,7 +185,7 @@ class FavoritesPage extends ConsumerWidget {
                           await ref
                               .read(customerRepositoryProvider)
                               .removeFavorite(item.id);
-                          (context as Element).markNeedsBuild();
+                          ref.invalidate(favoritesProvider);
                         }))))
           ]);
         },
@@ -200,9 +213,10 @@ class ProfilePage extends ConsumerWidget {
           child: ListTile(
             leading: const Icon(Icons.location_on_outlined),
             title: const Text('Mis direcciones'),
-            onTap: () => showDialog<void>(
-              context: context,
-              builder: (_) => const AddressDialog(),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const AddressesPage()),
             ),
           ),
         ),

@@ -17,8 +17,7 @@ export default function Login() {
     event.preventDefault();
     const validation: FieldErrors = {};
     if (!tenantCode.trim()) validation.tenantCode = 'Ingresa el código de la empresa';
-    if (!email.trim()) validation.email = 'Ingresa el correo electrónico';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) validation.email = 'Ingresa un correo electrónico válido';
+    if (!email.trim()) validation.email = 'Ingresa el correo o nombre de usuario';
     if (!password) validation.password = 'Ingresa la contraseña';
     setErrors(validation);
     setError('');
@@ -28,5 +27,5 @@ export default function Login() {
   }
 
   const field = (name: string, label: string, value: string, setter: (value: string) => void, type = 'text') => <label>{label}<input type={type} value={value} aria-invalid={!!errors[name]} aria-describedby={errors[name] ? `${name}-error` : undefined} onChange={event => { setter(event.target.value); setErrors(current => ({ ...current, [name]: '' })); setError(''); }} />{errors[name] && <small className="field-error" id={`${name}-error`}>{errors[name]}</small>}</label>;
-  return <main className="auth"><form onSubmit={submit} noValidate><h1>Iniciar sesión</h1><p>Administra tu operación de delivery.</p>{field('tenantCode', 'Empresa', tenantCode, setTenantCode)}{field('email', 'Correo', email, setEmail, 'email')}{field('password', 'Contraseña', password, setPassword, 'password')}{error && <div className="error">{error}</div>}<button>Ingresar</button><div className="links"><Link href="/forgot-password">Olvidé mi contraseña</Link><Link href="/register">Registrar empresa</Link></div></form></main>;
+  return <main className="auth"><form onSubmit={submit} noValidate><h1>Iniciar sesión</h1><p>Administra tu operación de delivery.</p>{field('tenantCode', 'Empresa', tenantCode, setTenantCode)}{field('email', 'Correo o usuario', email, setEmail)}{field('password', 'Contraseña', password, setPassword, 'password')}{error && <div className="error">{error}</div>}<button>Ingresar</button><div className="links"><Link href="/forgot-password">Olvidé mi contraseña</Link><Link href="/register">Registrar empresa</Link></div></form></main>;
 }

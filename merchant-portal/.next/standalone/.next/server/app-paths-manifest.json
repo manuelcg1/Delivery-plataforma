@@ -1,0 +1,15 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/login/page": "app/login/page.js",
+  "/page": "app/page.js",
+  "/(portal)/branches/page": "app/(portal)/branches/page.js",
+  "/(portal)/catalog/page": "app/(portal)/catalog/page.js",
+  "/(portal)/inventory/page": "app/(portal)/inventory/page.js",
+  "/(portal)/notifications/page": "app/(portal)/notifications/page.js",
+  "/(portal)/orders/page": "app/(portal)/orders/page.js",
+  "/(portal)/payments/page": "app/(portal)/payments/page.js",
+  "/(portal)/reports/page": "app/(portal)/reports/page.js",
+  "/(portal)/schedules/page": "app/(portal)/schedules/page.js",
+  "/(portal)/settings/page": "app/(portal)/settings/page.js",
+  "/(portal)/team/page": "app/(portal)/team/page.js"
+}

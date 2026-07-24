@@ -1,0 +1,15 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/login/page": "/login",
+  "/page": "/",
+  "/(portal)/branches/page": "/branches",
+  "/(portal)/catalog/page": "/catalog",
+  "/(portal)/inventory/page": "/inventory",
+  "/(portal)/notifications/page": "/notifications",
+  "/(portal)/orders/page": "/orders",
+  "/(portal)/payments/page": "/payments",
+  "/(portal)/reports/page": "/reports",
+  "/(portal)/schedules/page": "/schedules",
+  "/(portal)/settings/page": "/settings",
+  "/(portal)/team/page": "/team"
+}

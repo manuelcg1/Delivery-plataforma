@@ -229,7 +229,8 @@ class CheckoutPage extends ConsumerStatefulWidget {
 
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   String? address;
-  String method = 'CARD_SIMULATED';
+  String method = 'CARD';
+  String? errorMessage;
   bool busy = false;
   @override
   Widget build(BuildContext context) {
@@ -262,42 +263,74 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           const SizedBox(height: 20),
           DropdownButtonFormField(
             initialValue: method,
-            items: const [
-              DropdownMenuItem(
-                value: 'CARD_SIMULATED',
-                child: Text('Pago simulado'),
-              ),
-              DropdownMenuItem(
-                value: 'CASH_ON_DELIVERY',
-                child: Text('Pago contra entrega'),
-              ),
-            ],
+            items: checkoutPaymentMethods.entries
+                .map(
+                  (entry) => DropdownMenuItem(
+                    value: entry.key,
+                    child: Text(entry.value),
+                  ),
+                )
+                .toList(),
             onChanged: (value) => setState(() => method = value!),
             decoration: const InputDecoration(labelText: 'Método de pago'),
           ),
+          if (errorMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              errorMessage!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
           const SizedBox(height: 24),
           FilledButton(
             onPressed: busy || address == null
                 ? null
                 : () async {
-                    setState(() => busy = true);
+                    setState(() {
+                      busy = true;
+                      errorMessage = null;
+                    });
+                    Order? createdOrder;
+                    final repository = ref.read(commerceRepositoryProvider);
                     try {
-                      final order = await ref
-                          .read(commerceRepositoryProvider)
-                          .checkout(address!);
-                      await ref
-                          .read(commerceRepositoryProvider)
-                          .pay(order.id, method);
+                      createdOrder = await repository.checkout(address!);
+                      await repository.pay(createdOrder.id, method);
                       ref.invalidate(cartProvider);
                       ref.invalidate(ordersProvider);
                       if (context.mounted)
                         Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute<void>(
-                            builder: (_) => OrderDetailPage(order: order),
+                            builder: (_) =>
+                                OrderDetailPage(order: createdOrder!),
                           ),
                           (route) => route.isFirst,
                         );
+                    } catch (error) {
+                      final message = repository.errorMessage(error);
+                      if (createdOrder != null) {
+                        ref.invalidate(cartProvider);
+                        ref.invalidate(ordersProvider);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'El pedido fue creado, pero el pago quedó pendiente: $message',
+                              ),
+                            ),
+                          );
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  OrderDetailPage(order: createdOrder!),
+                            ),
+                            (route) => route.isFirst,
+                          );
+                        }
+                      } else if (mounted) {
+                        setState(() => errorMessage = message);
+                      }
                     } finally {
                       if (mounted) setState(() => busy = false);
                     }
@@ -310,57 +343,155 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   }
 }
 
-class OrdersPage extends ConsumerWidget {
+class OrdersPage extends ConsumerStatefulWidget {
   const OrdersPage({super.key});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) =>
-      ref.watch(ordersProvider).when(
-            data: (orders) {
-              if (orders.isEmpty)
-                return const EmptyState(
-                  title: 'Sin pedidos',
-                  message: 'Tus pedidos activos e históricos aparecerán aquí.',
-                );
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: orders
-                    .map(
-                      (order) => Card(
-                        child: ListTile(
-                          title: Text(order.number),
-                          subtitle: Text(order.status),
-                          trailing: Text(
-                            '${order.currency} ${order.total.toStringAsFixed(2)}',
-                          ),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => OrderDetailPage(order: order),
-                            ),
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => ErrorState(message: e.toString()),
-          );
+  ConsumerState<OrdersPage> createState() => _OrdersPageState();
 }
 
-class OrderDetailPage extends ConsumerWidget {
+class _OrdersPageState extends ConsumerState<OrdersPage> {
+  StreamSubscription<RealtimeEvent>? subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() async {
+      final user = ref.read(authControllerProvider).value;
+      if (user == null) return;
+      final client = ref.read(customerRealtimeClientProvider);
+      subscription = client.events.listen((event) {
+        if (event.type == 'ORDER_UPDATED') ref.invalidate(ordersProvider);
+      });
+      await client.connectAudience(
+        tenantId: user.tenantId,
+        audience: 'customers',
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    subscription?.cancel();
+    ref.read(customerRealtimeClientProvider).disconnect();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ref.watch(ordersProvider).when(
+        data: (orders) {
+          if (orders.isEmpty)
+            return const EmptyState(
+              title: 'Sin pedidos',
+              message: 'Tus pedidos activos e históricos aparecerán aquí.',
+            );
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: orders
+                .map(
+                  (order) => Card(
+                    child: ListTile(
+                      title: Text(order.number),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(order.status),
+                          const SizedBox(height: 3),
+                          Text(
+                            _orderDate(order.createdAt),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                      trailing: Text(
+                        '${order.currency} ${order.total.toStringAsFixed(2)}',
+                      ),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => OrderDetailPage(order: order),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => ErrorState(message: e.toString()),
+      );
+}
+
+String _orderDate(String value) {
+  final date = DateTime.parse(value).toLocal();
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(date.day)}/${two(date.month)}/${date.year} '
+      '${two(date.hour)}:${two(date.minute)}';
+}
+
+class OrderDetailPage extends ConsumerStatefulWidget {
   const OrderDetailPage({super.key, required this.order});
   final Order order;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
+  ConsumerState<OrderDetailPage> createState() => _OrderDetailPageState();
+}
+
+class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
+  late Future<Map<String, dynamic>> tracking;
+  StreamSubscription<RealtimeEvent>? customerSubscription;
+  Timer? fallbackRefresh;
+  String? realtimeStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    tracking = ref.read(commerceRepositoryProvider).tracking(widget.order.id);
+    Future.microtask(() {
+      customerSubscription =
+          ref.read(customerRealtimeClientProvider).events.listen((event) {
+        if (event.type == 'ORDER_UPDATED' && mounted) refresh();
+      });
+    });
+    fallbackRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) refresh();
+    });
+  }
+
+  void refresh([String? status]) {
+    ref.invalidate(ordersProvider);
+    setState(() {
+      realtimeStatus = status ?? realtimeStatus;
+      tracking = ref.read(commerceRepositoryProvider).tracking(widget.order.id);
+    });
+  }
+
+  @override
+  void dispose() {
+    customerSubscription?.cancel();
+    fallbackRefresh?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final orders = ref.watch(ordersProvider).valueOrNull;
+    final order = orders
+            ?.where((candidate) => candidate.id == widget.order.id)
+            .firstOrNull ??
+        widget.order;
+    return Scaffold(
         appBar: AppBar(title: Text(order.number)),
         body: FutureBuilder<Map<String, dynamic>>(
-          future: ref.read(commerceRepositoryProvider).tracking(order.id),
+          future: tracking,
           builder: (context, snapshot) {
             final deliveryId = snapshot.data?['deliveryId']?.toString();
+            final currentStatus = realtimeStatus ??
+                snapshot.data?['status']?.toString() ??
+                order.status;
             return ListView(padding: const EdgeInsets.all(20), children: [
-              Text('Estado: ${order.status}',
+              Text('Estado: ${_deliveryStatusLabel(currentStatus)}',
                   style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 12),
               Text(
@@ -375,7 +506,15 @@ class OrderDetailPage extends ConsumerWidget {
                               ? 'El tracking estará disponible cuando exista una entrega.'
                               : 'Seguimiento actualizado. Repartidor: ${snapshot.data?['courierName'] ?? 'por asignar'}'))),
               if (deliveryId != null)
-                RealtimeStatusBanner(deliveryId: deliveryId),
+                RealtimeStatusBanner(
+                  deliveryId: deliveryId,
+                  onOrderUpdated: (status) => refresh(status),
+                ),
+              if (deliveryId != null)
+                _CustomerDeliveryTimeline(
+                  deliveryId: deliveryId,
+                  currentStatus: currentStatus,
+                ),
               if (deliveryId != null)
                 FilledButton.tonalIcon(
                     onPressed: () => Navigator.push(
@@ -384,22 +523,34 @@ class OrderDetailPage extends ConsumerWidget {
                             builder: (_) => ChatPage(deliveryId: deliveryId))),
                     icon: const Icon(Icons.chat_bubble_outline),
                     label: const Text('Chatear con el repartidor')),
-              if (order.status == 'DELIVERED')
+              if (currentStatus == 'DELIVERED')
                 FilledButton.icon(
-                    onPressed: () => showDialog<void>(
-                        context: context,
-                        builder: (_) => RatingDialog(orderId: order.id)),
+                    onPressed: () async {
+                      final saved = await showDialog<bool>(
+                          context: context,
+                          builder: (_) => RatingDialog(orderId: order.id));
+                      if (saved == true && context.mounted) {
+                        ref.read(customerMainTabProvider.notifier).state = 0;
+                        Navigator.of(context)
+                            .popUntil((route) => route.isFirst);
+                      }
+                    },
                     icon: const Icon(Icons.star_outline),
                     label: const Text('Calificar pedido')),
             ]);
           },
-        ),
-      );
+        ));
+  }
 }
 
 class RealtimeStatusBanner extends ConsumerStatefulWidget {
-  const RealtimeStatusBanner({super.key, required this.deliveryId});
+  const RealtimeStatusBanner({
+    super.key,
+    required this.deliveryId,
+    required this.onOrderUpdated,
+  });
   final String deliveryId;
+  final ValueChanged<String?> onOrderUpdated;
   @override
   ConsumerState<RealtimeStatusBanner> createState() =>
       _RealtimeStatusBannerState();
@@ -416,7 +567,10 @@ class _RealtimeStatusBannerState extends ConsumerState<RealtimeStatusBanner> {
       if (user == null) return;
       final client = ref.read(realtimeClientProvider);
       subscription = client.events.listen((event) {
-        if (mounted) setState(() => status = _label(event.type));
+        if (mounted) {
+          setState(() => status = _label(event.type, event.payload));
+          widget.onOrderUpdated(event.payload['status']?.toString());
+        }
       });
       await client.connect(
           tenantId: user.tenantId, deliveryId: widget.deliveryId);
@@ -431,12 +585,14 @@ class _RealtimeStatusBannerState extends ConsumerState<RealtimeStatusBanner> {
     super.dispose();
   }
 
-  String _label(String event) => switch (event) {
+  String _label(String event, Map<String, dynamic> payload) => switch (event) {
         'LocationUpdated' => 'Ubicación del repartidor actualizada',
         'ChatMessageReceived' => 'Nuevo mensaje del repartidor',
         'CourierAssigned' => 'Repartidor asignado',
         'DeliveryStatusChanged' => 'Estado de entrega actualizado',
-        _ => 'Pedido actualizado'
+        _ => payload['status'] == null
+            ? 'Pedido actualizado'
+            : 'Estado: ${_deliveryStatusLabel(payload['status'].toString())}'
       };
   @override
   Widget build(BuildContext context) => Semantics(
@@ -453,6 +609,78 @@ class _RealtimeStatusBannerState extends ConsumerState<RealtimeStatusBanner> {
             Expanded(child: Text(status))
           ])));
 }
+
+class _CustomerDeliveryTimeline extends ConsumerWidget {
+  const _CustomerDeliveryTimeline({
+    required this.deliveryId,
+    required this.currentStatus,
+  });
+  final String deliveryId;
+  final String currentStatus;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => Card(
+        margin: const EdgeInsets.symmetric(vertical: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Línea de tiempo',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              FutureBuilder<List<DeliveryStatusEvent>>(
+                future: ref
+                    .read(commerceRepositoryProvider)
+                    .deliveryHistory(deliveryId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const LinearProgressIndicator();
+                  }
+                  final events = snapshot.data ?? const <DeliveryStatusEvent>[];
+                  if (events.isEmpty) {
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const CircleAvatar(
+                        radius: 14,
+                        child: Icon(Icons.check, size: 16),
+                      ),
+                      title: Text(_deliveryStatusLabel(currentStatus)),
+                      subtitle: const Text('Actualizado en tiempo real'),
+                    );
+                  }
+                  return Column(
+                    children: events
+                        .map((event) => ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: const CircleAvatar(
+                                radius: 14,
+                                child: Icon(Icons.check, size: 16),
+                              ),
+                              title: Text(_deliveryStatusLabel(event.status)),
+                              subtitle: Text(_orderDate(event.createdAt)),
+                            ))
+                        .toList(),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+String _deliveryStatusLabel(String status) =>
+    const {
+      'PENDING': 'Pedido creado',
+      'ASSIGNED': 'Repartidor asignado',
+      'ACCEPTED': 'Pedido aceptado',
+      'PICKED_UP': 'Pedido recogido',
+      'IN_TRANSIT': 'En camino',
+      'DELIVERED': 'Entregado',
+      'CANCELLED': 'Cancelado',
+    }[status] ??
+    status;
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key, required this.deliveryId});
@@ -533,6 +761,15 @@ class RatingDialog extends ConsumerStatefulWidget {
 class _RatingDialogState extends ConsumerState<RatingDialog> {
   int score = 5;
   final comment = TextEditingController();
+  bool saving = false;
+  String? error;
+
+  @override
+  void dispose() {
+    comment.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
           title: const Text('Califica tu experiencia'),
@@ -550,19 +787,42 @@ class _RatingDialogState extends ConsumerState<RatingDialog> {
                 controller: comment,
                 maxLength: 500,
                 decoration:
-                    const InputDecoration(labelText: 'Comentario opcional'))
+                    const InputDecoration(labelText: 'Comentario opcional')),
+            if (error != null) ...[
+              const SizedBox(height: 8),
+              Text(error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
           ]),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Cancelar')),
             FilledButton(
-                onPressed: () async {
-                  await ref
-                      .read(commerceRepositoryProvider)
-                      .rate(widget.orderId, score, comment.text);
-                  if (context.mounted) Navigator.pop(context);
-                },
-                child: const Text('Enviar'))
+                onPressed: saving
+                    ? null
+                    : () async {
+                        setState(() {
+                          saving = true;
+                          error = null;
+                        });
+                        try {
+                          await ref
+                              .read(commerceRepositoryProvider)
+                              .rate(widget.orderId, score, comment.text.trim());
+                          ref.invalidate(ordersProvider);
+                          if (context.mounted) Navigator.pop(context, true);
+                        } catch (cause) {
+                          if (mounted) {
+                            setState(() {
+                              saving = false;
+                              error = ref
+                                  .read(commerceRepositoryProvider)
+                                  .errorMessage(cause);
+                            });
+                          }
+                        }
+                      },
+                child: Text(saving ? 'Guardando…' : 'Enviar'))
           ]);
 }

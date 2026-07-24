@@ -3,6 +3,11 @@ import 'package:uuid/uuid.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/offline/offline_cache.dart';
 
+const checkoutPaymentMethods = <String, String>{
+  'CARD': 'Pago con tarjeta (simulado)',
+  'CASH_ON_DELIVERY': 'Pago contra entrega',
+};
+
 class CartItem {
   const CartItem({
     required this.id,
@@ -46,8 +51,9 @@ class Order {
     required this.status,
     required this.total,
     required this.currency,
+    required this.createdAt,
   });
-  final String id, number, status, currency;
+  final String id, number, status, currency, createdAt;
   final double total;
   factory Order.fromJson(Map<String, dynamic> j) => Order(
         id: j['id'] as String,
@@ -55,6 +61,7 @@ class Order {
         status: j['status'] as String,
         total: (j['total'] as num).toDouble(),
         currency: j['currency'] as String,
+        createdAt: j['createdAt'] as String,
       );
 }
 
@@ -89,9 +96,25 @@ class CustomerNotification {
           createdAt: json['createdAt'] as String);
 }
 
+class DeliveryStatusEvent {
+  const DeliveryStatusEvent({
+    required this.id,
+    required this.status,
+    required this.createdAt,
+  });
+  final String id, status, createdAt;
+  factory DeliveryStatusEvent.fromJson(Map<String, dynamic> json) =>
+      DeliveryStatusEvent(
+        id: json['id'] as String,
+        status: json['status'] as String,
+        createdAt: json['createdAt'] as String,
+      );
+}
+
 class CommerceRepository {
   CommerceRepository(this.api);
   final ApiClient api;
+  String errorMessage(Object error) => api.exception(error).message;
   Future<Cart> cart() async {
     try {
       final r = await api.dio.get<Map<String, dynamic>>('/api/v1/cart');
@@ -182,6 +205,15 @@ class CommerceRepository {
       if (cached is Map<String, dynamic>) return cached;
       rethrow;
     }
+  }
+
+  Future<List<DeliveryStatusEvent>> deliveryHistory(String deliveryId) async {
+    final response = await api.dio
+        .get<List<dynamic>>('/api/v1/deliveries/$deliveryId/history');
+    return response.data!
+        .map((item) =>
+            DeliveryStatusEvent.fromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> rate(String orderId, int score, String comment) =>

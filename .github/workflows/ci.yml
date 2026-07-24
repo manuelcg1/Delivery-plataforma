@@ -29,5 +29,75 @@ jobs:
         working-directory: admin-web
       - run: npm run lint
         working-directory: admin-web
+      - run: npm test
+        working-directory: admin-web
       - run: npm run build
         working-directory: admin-web
+
+  merchant-portal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: merchant-portal/package-lock.json
+      - run: npm ci
+        working-directory: merchant-portal
+      - run: npm test
+        working-directory: merchant-portal
+      - run: npm run lint
+        working-directory: merchant-portal
+      - run: npm run build
+        working-directory: merchant-portal
+
+  customer-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: customer-app
+      - run: dart format --set-exit-if-changed lib test
+        working-directory: customer-app
+      - run: flutter analyze
+        working-directory: customer-app
+      - run: flutter test
+        working-directory: customer-app
+      - name: Create ephemeral CI signing key
+        working-directory: customer-app
+        run: keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/customer-ci.jks" -storepass ci-only-password -keypass ci-only-password -alias customer-ci -dname "CN=CI,O=Delivery,C=PE" -keyalg RSA -keysize 2048 -validity 2
+      - name: Build signed release APK
+        env:
+          DELIVERY_ANDROID_STORE_FILE: ${{ runner.temp }}/customer-ci.jks
+          DELIVERY_ANDROID_STORE_PASSWORD: ci-only-password
+          DELIVERY_ANDROID_KEY_ALIAS: customer-ci
+          DELIVERY_ANDROID_KEY_PASSWORD: ci-only-password
+        run: flutter build apk --release --dart-define=ENVIRONMENT=staging --dart-define=API_BASE_URL=https://staging.invalid --dart-define=WS_BASE_URL=wss://staging.invalid
+        working-directory: customer-app
+
+  deployment-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production Compose
+        env:
+          ADMIN_DOMAIN: admin.example.com
+          MERCHANT_DOMAIN: merchant.example.com
+          API_DOMAIN: api.example.com
+          MEDIA_DOMAIN: media.example.com
+          ACME_EMAIL: ops@example.com
+          POSTGRES_PASSWORD: ci-postgres-password
+          REDIS_PASSWORD: ci-redis-password
+          JWT_SECRET: ci-only-jwt-secret-that-is-longer-than-forty-eight-characters
+          PAYMENT_WEBHOOK_SECRET: ci-only-webhook-secret-longer-than-thirty-two
+          MINIO_ROOT_USER: ci-minio
+          MINIO_ROOT_PASSWORD: ci-minio-password
+          MAIL_HOST: smtp.example.com
+          MAIL_USERNAME: ci
+          MAIL_PASSWORD: ci
+        run: docker compose --env-file .env.production.example -f docker-compose.prod.yml config --quiet

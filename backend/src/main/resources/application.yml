@@ -40,6 +40,15 @@ identity:
   login-max-attempts: ${LOGIN_MAX_ATTEMPTS:5}
   login-lock-minutes: ${LOGIN_LOCK_MINUTES:15}
 
+platform:
+  owner:
+    bootstrap-enabled: ${PLATFORM_OWNER_BOOTSTRAP_ENABLED:false}
+    initial-password: ${PLATFORM_OWNER_INITIAL_PASSWORD:}
+    email: ${PLATFORM_OWNER_EMAIL:}
+    username: ${PLATFORM_OWNER_USERNAME:platform_owner}
+merchant:
+  courier-assignment-timeout-seconds: ${COURIER_ASSIGNMENT_TIMEOUT_SECONDS:900}
+
 server:
   port: 8080
   shutdown: graceful
@@ -62,3 +71,8 @@ info:
   app:
     name: Delivery Platform
     version: 0.1.0
+
+tracking:
+  location-interval-seconds: ${TRACKING_LOCATION_INTERVAL_SECONDS:5}
+  maximum-accuracy-meters: ${TRACKING_MAXIMUM_ACCURACY_METERS:100}
+  maximum-speed-kph: ${TRACKING_MAXIMUM_SPEED_KPH:180}

@@ -1,0 +1,161 @@
+name: delivery-platform-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-delivery}
+      POSTGRES_USER: ${POSTGRES_USER:-delivery}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-delivery} -d ${POSTGRES_DB:-delivery}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    volumes:
+      - minio_prod_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-delivery}
+      DB_USERNAME: ${POSTGRES_USER:-delivery}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      FRONTEND_URL: https://${ADMIN_DOMAIN:?ADMIN_DOMAIN is required}
+      COOKIE_SECURE: "true"
+      CORS_ALLOWED_ORIGINS: https://${ADMIN_DOMAIN:?ADMIN_DOMAIN is required},https://${MERCHANT_DOMAIN:?MERCHANT_DOMAIN is required}
+      MAIL_HOST: ${MAIL_HOST:?MAIL_HOST is required}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
+      SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD:?MAIL_PASSWORD is required}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "true"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_ENDPOINT: https://${MEDIA_DOMAIN:?MEDIA_DOMAIN is required}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_BUCKET_CATALOG: ${MINIO_BUCKET_CATALOG:-delivery-catalog}
+      MINIO_BUCKET_PROOFS: ${MINIO_BUCKET_PROOFS:-delivery-proofs}
+      PAYMENT_PROVIDER: CASH_ONLY
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET is required}
+      PLATFORM_OWNER_BOOTSTRAP_ENABLED: ${PLATFORM_OWNER_BOOTSTRAP_ENABLED:-false}
+      PLATFORM_OWNER_EMAIL: ${PLATFORM_OWNER_EMAIL:-}
+      PLATFORM_OWNER_USERNAME: ${PLATFORM_OWNER_USERNAME:-platform_owner}
+      PLATFORM_OWNER_INITIAL_PASSWORD: ${PLATFORM_OWNER_INITIAL_PASSWORD:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+  admin-web:
+    build:
+      context: ./admin-web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?API_DOMAIN is required}
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+  merchant-portal:
+    build:
+      context: ./merchant-portal
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?API_DOMAIN is required}
+        NEXT_PUBLIC_WS_URL: wss://${API_DOMAIN:?API_DOMAIN is required}/ws
+        API_INTERNAL_URL: http://backend:8080
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://backend:8080
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+  proxy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?ADMIN_DOMAIN is required}
+      MERCHANT_DOMAIN: ${MERCHANT_DOMAIN:?MERCHANT_DOMAIN is required}
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required}
+      MEDIA_DOMAIN: ${MEDIA_DOMAIN:?MEDIA_DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_prod_data:/data
+      - caddy_prod_config:/config
+    depends_on:
+      backend: { condition: service_healthy }
+      admin-web: { condition: service_started }
+      merchant-portal: { condition: service_started }
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+  minio_prod_data:
+  caddy_prod_data:
+  caddy_prod_config:
+
+networks:
+  internal:
+    driver: bridge

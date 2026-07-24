@@ -23,6 +23,24 @@ class Address {
       );
 }
 
+Map<String, dynamic> addressRequestData({
+  required String label,
+  required String recipientName,
+  required String phone,
+  required String addressLine,
+  required String district,
+  required bool isDefault,
+}) =>
+    <String, dynamic>{
+      'label': label.trim(),
+      'recipientName': recipientName.trim(),
+      'phone': phone.trim(),
+      'addressLine': addressLine.trim(),
+      'district': district.trim(),
+      'countryCode': 'PE',
+      'isDefault': isDefault,
+    };
+
 class Merchant {
   const Merchant({
     required this.id,
@@ -81,6 +99,13 @@ class Favorite {
       productId: json['productId'] as String?);
 }
 
+Favorite? favoriteForMerchant(List<Favorite> favorites, String merchantId) {
+  for (final favorite in favorites) {
+    if (favorite.merchantId == merchantId) return favorite;
+  }
+  return null;
+}
+
 class CustomerRepository {
   CustomerRepository(this.api);
   final ApiClient api;
@@ -97,6 +122,24 @@ class CustomerRepository {
       data: data,
     );
     return Address.fromJson(r.data!);
+  }
+
+  Future<Address> updateAddress(String id, Map<String, dynamic> data) async {
+    final response = await api.dio.put<Map<String, dynamic>>(
+      '/api/v1/customer/addresses/$id',
+      data: data,
+    );
+    return Address.fromJson(response.data!);
+  }
+
+  Future<void> deleteAddress(String id) =>
+      api.dio.delete<void>('/api/v1/customer/addresses/$id');
+
+  Future<Address> makeDefaultAddress(String id) async {
+    final response = await api.dio.put<Map<String, dynamic>>(
+      '/api/v1/customer/addresses/$id/default',
+    );
+    return Address.fromJson(response.data!);
   }
 
   Future<List<Merchant>> merchants([String search = '']) async {

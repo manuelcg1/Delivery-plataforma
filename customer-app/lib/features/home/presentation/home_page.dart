@@ -15,6 +15,9 @@ final addressesProvider = FutureProvider(
 final merchantsProvider = FutureProvider(
   (ref) => ref.watch(customerRepositoryProvider).merchants(),
 );
+final favoritesProvider = FutureProvider(
+  (ref) => ref.watch(customerRepositoryProvider).favorites(),
+);
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -50,9 +53,11 @@ class HomePage extends ConsumerWidget {
                       : items.first.addressLine,
                 ),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => showDialog<void>(
-                  context: context,
-                  builder: (_) => const AddressDialog(),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AddressesPage(),
+                  ),
                 ),
               ),
             ),
@@ -109,23 +114,137 @@ class HomePage extends ConsumerWidget {
   }
 }
 
+class AddressesPage extends ConsumerWidget {
+  const AddressesPage({super.key});
+
+  Future<void> _openForm(BuildContext context, Address? address) =>
+      showDialog<void>(
+        context: context,
+        builder: (_) => AddressDialog(address: address),
+      );
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
+        appBar: AppBar(title: const Text('Mis direcciones')),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () => _openForm(context, null),
+          icon: const Icon(Icons.add),
+          label: const Text('Agregar dirección'),
+        ),
+        body: ref.watch(addressesProvider).when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => ErrorState(
+                message: error.toString(),
+                onRetry: () => ref.invalidate(addressesProvider),
+              ),
+              data: (addresses) => addresses.isEmpty
+                  ? Center(
+                      child: FilledButton.icon(
+                        onPressed: () => _openForm(context, null),
+                        icon: const Icon(Icons.add_location_alt_outlined),
+                        label: const Text('Agregar una dirección'),
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                      children: addresses
+                          .map(
+                            (address) => Card(
+                              child: ListTile(
+                                leading: Icon(address.isDefault
+                                    ? Icons.home
+                                    : Icons.location_on_outlined),
+                                title: Text(address.label),
+                                subtitle: Text(
+                                  '${address.addressLine}\n${address.district}',
+                                ),
+                                isThreeLine: true,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (!address.isDefault)
+                                      IconButton(
+                                        tooltip: 'Usar como predeterminada',
+                                        icon: const Icon(Icons.star_border),
+                                        onPressed: () async {
+                                          await ref
+                                              .read(customerRepositoryProvider)
+                                              .makeDefaultAddress(address.id);
+                                          ref.invalidate(addressesProvider);
+                                        },
+                                      ),
+                                    IconButton(
+                                      tooltip: 'Editar dirección',
+                                      icon: const Icon(Icons.edit_outlined),
+                                      onPressed: () =>
+                                          _openForm(context, address),
+                                    ),
+                                  ],
+                                ),
+                                onTap: () => _openForm(context, address),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+            ),
+      );
+}
+
 class AddressDialog extends ConsumerStatefulWidget {
-  const AddressDialog({super.key});
+  const AddressDialog({super.key, this.address});
+  final Address? address;
   @override
   ConsumerState<AddressDialog> createState() => _AddressDialogState();
 }
 
 class _AddressDialogState extends ConsumerState<AddressDialog> {
-  final line = TextEditingController(),
-      district = TextEditingController(),
-      phone = TextEditingController();
+  late final TextEditingController label;
+  late final TextEditingController recipient;
+  late final TextEditingController line;
+  late final TextEditingController district;
+  late final TextEditingController phone;
   bool busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final address = widget.address;
+    label = TextEditingController(text: address?.label ?? 'Casa');
+    recipient =
+        TextEditingController(text: address?.recipientName ?? 'Cliente');
+    line = TextEditingController(text: address?.addressLine ?? '');
+    district = TextEditingController(text: address?.district ?? '');
+    phone = TextEditingController(text: address?.phone ?? '');
+  }
+
+  @override
+  void dispose() {
+    label.dispose();
+    recipient.dispose();
+    line.dispose();
+    district.dispose();
+    phone.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Nueva dirección'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        title: Text(
+          widget.address == null ? 'Nueva dirección' : 'Editar dirección',
+        ),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: label,
+              decoration: const InputDecoration(labelText: 'Nombre'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: recipient,
+              decoration: const InputDecoration(labelText: 'Destinatario'),
+            ),
+            const SizedBox(height: 8),
             TextField(
               controller: line,
               decoration: const InputDecoration(labelText: 'Dirección'),
@@ -138,9 +257,10 @@ class _AddressDialogState extends ConsumerState<AddressDialog> {
             const SizedBox(height: 8),
             TextField(
               controller: phone,
+              keyboardType: TextInputType.phone,
               decoration: const InputDecoration(labelText: 'Teléfono'),
             ),
-          ],
+          ]),
         ),
         actions: [
           TextButton(
@@ -152,19 +272,24 @@ class _AddressDialogState extends ConsumerState<AddressDialog> {
                 ? null
                 : () async {
                     setState(() => busy = true);
-                    await ref.read(customerRepositoryProvider).addAddress({
-                      'label': 'Casa',
-                      'recipientName': 'Cliente',
-                      'phone': phone.text,
-                      'addressLine': line.text,
-                      'district': district.text,
-                      'countryCode': 'PE',
-                      'isDefault': true,
-                    });
+                    final data = addressRequestData(
+                      label: label.text,
+                      recipientName: recipient.text,
+                      phone: phone.text,
+                      addressLine: line.text,
+                      district: district.text,
+                      isDefault: widget.address?.isDefault ?? false,
+                    );
+                    final repository = ref.read(customerRepositoryProvider);
+                    if (widget.address == null) {
+                      await repository.addAddress(data);
+                    } else {
+                      await repository.updateAddress(widget.address!.id, data);
+                    }
                     ref.invalidate(addressesProvider);
                     if (context.mounted) Navigator.pop(context);
                   },
-            child: const Text('Guardar'),
+            child: Text(widget.address == null ? 'Agregar' : 'Guardar cambios'),
           ),
         ],
       );
@@ -174,56 +299,78 @@ class MerchantPage extends ConsumerWidget {
   const MerchantPage({super.key, required this.merchant});
   final Merchant merchant;
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
-        appBar: AppBar(title: Text(merchant.name), actions: [
-          IconButton(
-              tooltip: 'Agregar a favoritos',
-              icon: const Icon(Icons.favorite_border),
-              onPressed: () async {
-                await ref
-                    .read(customerRepositoryProvider)
-                    .addMerchantFavorite(merchant.id);
-                if (context.mounted)
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('Comercio agregado a favoritos')));
-              })
-        ]),
-        body: FutureBuilder<List<Product>>(
-          future:
-              ref.read(customerRepositoryProvider).products(merchant.branchId),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done)
-              return const Center(child: CircularProgressIndicator());
-            if (snapshot.hasError)
-              return ErrorState(message: snapshot.error.toString());
-            final products = snapshot.data!;
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                  merchant.branchName,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                ...products.map(
-                  (product) => Card(
-                    child: ListTile(
-                      title: Text(product.name),
-                      subtitle: Text(product.description),
-                      trailing: Text(
-                        '${product.currency} ${product.price.toStringAsFixed(2)}',
-                      ),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              ProductPage(merchant: merchant, product: product),
-                        ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final favorites = ref.watch(favoritesProvider);
+    final favorite = favoriteForMerchant(
+      favorites.valueOrNull ?? const <Favorite>[],
+      merchant.id,
+    );
+    return Scaffold(
+      appBar: AppBar(title: Text(merchant.name), actions: [
+        IconButton(
+            tooltip: favorite == null
+                ? 'Agregar a favoritos'
+                : 'Quitar de favoritos',
+            icon: Icon(
+              favorite == null ? Icons.favorite_border : Icons.favorite,
+              color: favorite == null ? null : Colors.red,
+            ),
+            onPressed: favorites.isLoading
+                ? null
+                : () async {
+                    final repository = ref.read(customerRepositoryProvider);
+                    if (favorite == null) {
+                      await repository.addMerchantFavorite(merchant.id);
+                    } else {
+                      await repository.removeFavorite(favorite.id);
+                    }
+                    ref.invalidate(favoritesProvider);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(favorite == null
+                            ? 'Comercio agregado a favoritos'
+                            : 'Comercio eliminado de favoritos'),
+                      ));
+                    }
+                  })
+      ]),
+      body: FutureBuilder<List<Product>>(
+        future:
+            ref.read(customerRepositoryProvider).products(merchant.branchId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done)
+            return const Center(child: CircularProgressIndicator());
+          if (snapshot.hasError)
+            return ErrorState(message: snapshot.error.toString());
+          final products = snapshot.data!;
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text(
+                merchant.branchName,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              ...products.map(
+                (product) => Card(
+                  child: ListTile(
+                    title: Text(product.name),
+                    subtitle: Text(product.description),
+                    trailing: Text(
+                      '${product.currency} ${product.price.toStringAsFixed(2)}',
+                    ),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            ProductPage(merchant: merchant, product: product),
                       ),
                     ),
                   ),
                 ),
-              ],
-            );
-          },
-        ),
-      );
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }

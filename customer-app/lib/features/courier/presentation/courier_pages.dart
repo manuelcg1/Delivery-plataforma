@@ -1,0 +1,635 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import '../../../core/providers.dart';
+import '../../../core/realtime/realtime_client.dart';
+import '../../auth/presentation/auth_controller.dart';
+import '../data/courier_repository.dart';
+
+final courierRepositoryProvider = Provider(
+  (ref) => CourierRepository(ref.watch(apiClientProvider)),
+);
+
+class CourierShell extends ConsumerStatefulWidget {
+  const CourierShell({super.key});
+
+  @override
+  ConsumerState<CourierShell> createState() => _CourierShellState();
+}
+
+class _CourierShellState extends ConsumerState<CourierShell> {
+  int index = 0;
+  int revision = 0;
+  StreamSubscription<RealtimeEvent>? realtimeSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() async {
+      final user = ref.read(authControllerProvider).value;
+      if (user == null) return;
+      final realtime = ref.read(realtimeClientProvider);
+      realtimeSubscription = realtime.events.listen((event) {
+        if (!mounted) return;
+        setState(() => revision++);
+        if (const {'COURIER_ASSIGNMENT_PENDING', 'CourierAssigned'}
+            .contains(event.type)) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text(event.payload['title']?.toString() ??
+                'Tienes una nueva entrega asignada'),
+          ));
+        }
+      });
+      await realtime.connectAudience(
+        tenantId: user.tenantId,
+        audience: 'courier/${user.id}',
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    realtimeSubscription?.cancel();
+    ref.read(realtimeClientProvider).disconnect();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      CourierDeliveriesPage(key: ValueKey('deliveries-$revision')),
+      CourierNotificationsPage(key: ValueKey('notifications-$revision')),
+      const CourierProfilePage(),
+    ];
+    return Scaffold(
+      body: SafeArea(child: IndexedStack(index: index, children: pages)),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: index,
+        onDestinationSelected: (value) => setState(() => index = value),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.delivery_dining_outlined),
+            selectedIcon: Icon(Icons.delivery_dining),
+            label: 'Entregas',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.notifications_outlined),
+            label: 'Avisos',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            label: 'Perfil',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CourierDeliveriesPage extends ConsumerStatefulWidget {
+  const CourierDeliveriesPage({super.key});
+
+  @override
+  ConsumerState<CourierDeliveriesPage> createState() =>
+      _CourierDeliveriesPageState();
+}
+
+class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
+  late Future<(CourierProfile, List<CourierDelivery>)> future;
+  StreamSubscription<RealtimeEvent>? assignmentSubscription;
+  Timer? fallbackRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    future = load();
+    Future.microtask(() {
+      assignmentSubscription = ref.read(realtimeClientProvider).events.listen(
+        (event) {
+          if (mounted &&
+              const {'COURIER_ASSIGNMENT_PENDING', 'CourierAssigned'}
+                  .contains(event.type)) {
+            refresh();
+          }
+        },
+      );
+    });
+    fallbackRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) refresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    assignmentSubscription?.cancel();
+    fallbackRefresh?.cancel();
+    super.dispose();
+  }
+
+  Future<(CourierProfile, List<CourierDelivery>)> load() async {
+    final repository = ref.read(courierRepositoryProvider);
+    return (await repository.profile(), await repository.deliveries());
+  }
+
+  void refresh() => setState(() => future = load());
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder(
+        future: future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return _CourierError(
+              message: ref
+                  .read(apiClientProvider)
+                  .exception(snapshot.error!)
+                  .message,
+              onRetry: refresh,
+            );
+          }
+          final (profile, deliveries) = snapshot.data!;
+          final active = deliveries
+              .where((item) => !const {
+                    'DELIVERED',
+                    'FAILED',
+                    'CANCELLED',
+                    'REJECTED',
+                    'EXPIRED',
+                  }.contains(item.status))
+              .toList();
+          final delivered =
+              deliveries.where((item) => item.status == 'DELIVERED').toList();
+          return RefreshIndicator(
+            onRefresh: () async => refresh(),
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Text('Hola, ${profile.name}',
+                    style: Theme.of(context).textTheme.headlineMedium),
+                const SizedBox(height: 4),
+                Text(
+                    '${profile.activeDeliveries}/${profile.maxActiveDeliveries} entregas activas'),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.circle, color: Colors.green),
+                        const SizedBox(width: 12),
+                        const Expanded(child: Text('Disponibilidad')),
+                        DropdownButton<String>(
+                          value: profile.status,
+                          items: const [
+                            DropdownMenuItem(
+                                value: 'ONLINE', child: Text('En línea')),
+                            DropdownMenuItem(
+                                value: 'PAUSED', child: Text('En pausa')),
+                            DropdownMenuItem(
+                                value: 'OFFLINE', child: Text('Desconectado')),
+                          ],
+                          onChanged: (value) async {
+                            if (value == null) return;
+                            await ref
+                                .read(courierRepositoryProvider)
+                                .updateAvailability(value);
+                            refresh();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text('Mis entregas',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                if (active.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: Text('No tienes entregas asignadas.')),
+                  ),
+                ...active.map(
+                  (delivery) => Card(
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                          child: Icon(Icons.local_shipping_outlined)),
+                      title: Text('Pedido ${delivery.orderId.substring(0, 8)}'),
+                      subtitle: Text(_statusLabel(delivery.status)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () async {
+                        await Navigator.push<void>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                CourierDeliveryPage(delivery: delivery),
+                          ),
+                        );
+                        refresh();
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text('Entregados',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                if (delivered.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                        child: Text('Aún no tienes pedidos entregados.')),
+                  ),
+                ...delivered.map((delivery) => Card(
+                      color: const Color(0xFFE8F8EF),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        side: const BorderSide(color: Color(0xFF86D5A8)),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFF169B62),
+                          foregroundColor: Colors.white,
+                          child: Icon(Icons.check_rounded),
+                        ),
+                        title:
+                            Text('Pedido ${delivery.orderId.substring(0, 8)}'),
+                        subtitle: _DeliveredAt(deliveryId: delivery.id),
+                        trailing: const Icon(Icons.chevron_right,
+                            color: Color(0xFF087A49)),
+                        onTap: () => Navigator.push<void>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                CourierDeliveryPage(delivery: delivery),
+                          ),
+                        ),
+                      ),
+                    )),
+              ],
+            ),
+          );
+        },
+      );
+}
+
+class CourierDeliveryPage extends ConsumerStatefulWidget {
+  const CourierDeliveryPage({super.key, required this.delivery});
+  final CourierDelivery delivery;
+
+  @override
+  ConsumerState<CourierDeliveryPage> createState() =>
+      _CourierDeliveryPageState();
+}
+
+class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
+  late CourierDelivery delivery = widget.delivery;
+  late Future<List<CourierDeliveryHistory>> history;
+  bool busy = false;
+
+  static const nextStatus = <String, String>{
+    'ASSIGNED': 'ACCEPTED',
+    'ACCEPTED': 'PICKED_UP',
+    'PICKED_UP': 'IN_TRANSIT',
+    'IN_TRANSIT': 'DELIVERED',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    history = ref.read(courierRepositoryProvider).history(delivery.id);
+  }
+
+  void refreshHistory() =>
+      history = ref.read(courierRepositoryProvider).history(delivery.id);
+
+  Future<void> advance() async {
+    final next = nextStatus[delivery.status];
+    if (next == null) return;
+    setState(() => busy = true);
+    try {
+      delivery = await ref
+          .read(courierRepositoryProvider)
+          .updateDelivery(delivery.id, next);
+      refreshHistory();
+      if (next == 'DELIVERED' && mounted) {
+        Navigator.pop(context);
+        return;
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> respond(String status) async {
+    setState(() => busy = true);
+    try {
+      delivery = await ref
+          .read(courierRepositoryProvider)
+          .updateDelivery(delivery.id, status);
+      refreshHistory();
+      if (mounted && status == 'REJECTED') Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        final message = ref.read(apiClientProvider).exception(error).message;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final next = nextStatus[delivery.status];
+    return Scaffold(
+      appBar: AppBar(title: const Text('Detalle de entrega')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text('Pedido ${delivery.orderId.substring(0, 8)}',
+              style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          Chip(label: Text(_statusLabel(delivery.status))),
+          const SizedBox(height: 20),
+          Text('Línea de tiempo',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          FutureBuilder<List<CourierDeliveryHistory>>(
+            future: history,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const LinearProgressIndicator();
+              }
+              final events = (snapshot.data ?? const <CourierDeliveryHistory>[])
+                  .where((event) => const {
+                        'ACCEPTED',
+                        'PICKED_UP',
+                        'IN_TRANSIT',
+                        'DELIVERED',
+                      }.contains(event.status));
+              return Column(
+                children: events
+                    .map((event) => ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const CircleAvatar(
+                            radius: 15,
+                            backgroundColor: Color(0xFFDCFCE7),
+                            child: Icon(Icons.check,
+                                size: 17, color: Color(0xFF15803D)),
+                          ),
+                          title: Text(_statusLabel(event.status)),
+                          subtitle: Text(_dateTime(event.createdAt)),
+                        ))
+                    .toList(),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+          if (delivery.pickupNotes?.isNotEmpty == true)
+            ListTile(
+              leading: const Icon(Icons.store_outlined),
+              title: const Text('Indicaciones de recojo'),
+              subtitle: Text(delivery.pickupNotes!),
+            ),
+          if (delivery.deliveryNotes?.isNotEmpty == true)
+            ListTile(
+              leading: const Icon(Icons.location_on_outlined),
+              title: const Text('Indicaciones de entrega'),
+              subtitle: Text(delivery.deliveryNotes!),
+            ),
+          if (delivery.status == 'ASSIGNED') ...[
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: busy ? null : () => respond('ACCEPTED'),
+              icon: const Icon(Icons.check_circle_outline),
+              label: Text(busy ? 'Procesando…' : 'Aceptar entrega'),
+            ),
+          ] else if (next != null) ...[
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: busy ? null : advance,
+              icon: const Icon(Icons.check_circle_outline),
+              label: Text(
+                  busy ? 'Actualizando…' : 'Marcar: ${_statusLabel(next)}'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class CourierNotificationsPage extends ConsumerStatefulWidget {
+  const CourierNotificationsPage({super.key});
+
+  @override
+  ConsumerState<CourierNotificationsPage> createState() =>
+      _CourierNotificationsPageState();
+}
+
+class _CourierNotificationsPageState
+    extends ConsumerState<CourierNotificationsPage> {
+  late Future<List<CourierNotification>> future;
+  Timer? fallbackRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    future = ref.read(courierRepositoryProvider).notifications();
+    fallbackRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) {
+        setState(
+            () => future = ref.read(courierRepositoryProvider).notifications());
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    fallbackRefresh?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RefreshIndicator(
+        onRefresh: () async => setState(
+            () => future = ref.read(courierRepositoryProvider).notifications()),
+        child: FutureBuilder<List<CourierNotification>>(
+          future: future,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              final message = ref
+                  .read(apiClientProvider)
+                  .exception(snapshot.error!)
+                  .message;
+              return ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  Text('Notificaciones',
+                      style: Theme.of(context).textTheme.headlineMedium),
+                  const SizedBox(height: 24),
+                  _CourierError(
+                      message: message,
+                      onRetry: () {
+                        setState(() => future = ref
+                            .read(courierRepositoryProvider)
+                            .notifications());
+                      }),
+                ],
+              );
+            }
+            final items = snapshot.data ?? const <CourierNotification>[];
+            return ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Text('Notificaciones',
+                    style: Theme.of(context).textTheme.headlineMedium),
+                const SizedBox(height: 16),
+                if (snapshot.connectionState != ConnectionState.done)
+                  const LinearProgressIndicator(),
+                if (snapshot.connectionState == ConnectionState.done &&
+                    items.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: Text('No tienes notificaciones.')),
+                  ),
+                ...items.map((item) => Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.notifications_active),
+                        title: Text(item.title),
+                        subtitle: Text(item.body),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          try {
+                            final delivery = await ref
+                                .read(courierRepositoryProvider)
+                                .delivery(item.deliveryId);
+                            if (!context.mounted) return;
+                            await Navigator.push<void>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    CourierDeliveryPage(delivery: delivery),
+                              ),
+                            );
+                            if (mounted) {
+                              setState(() => future = ref
+                                  .read(courierRepositoryProvider)
+                                  .notifications());
+                            }
+                          } catch (error) {
+                            if (!context.mounted) return;
+                            final message = ref
+                                .read(apiClientProvider)
+                                .exception(error)
+                                .message;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(message)),
+                            );
+                          }
+                        },
+                      ),
+                    )),
+              ],
+            );
+          },
+        ),
+      );
+}
+
+class CourierProfilePage extends ConsumerWidget {
+  const CourierProfilePage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authControllerProvider).value;
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text('Perfil del repartidor',
+            style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            leading: const CircleAvatar(child: Icon(Icons.delivery_dining)),
+            title: Text(user?.firstName ?? ''),
+            subtitle: Text('Empresa: ${user?.tenantCode ?? ''}'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        OutlinedButton.icon(
+          onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+          icon: const Icon(Icons.logout),
+          label: const Text('Cerrar sesión'),
+        ),
+      ],
+    );
+  }
+}
+
+class _DeliveredAt extends ConsumerWidget {
+  const _DeliveredAt({required this.deliveryId});
+  final String deliveryId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) =>
+      FutureBuilder<List<CourierDeliveryHistory>>(
+        future: ref.read(courierRepositoryProvider).history(deliveryId),
+        builder: (context, snapshot) {
+          final delivered = snapshot.data
+              ?.where((event) => event.status == 'DELIVERED')
+              .lastOrNull;
+          return Text(delivered == null
+              ? 'Entregado'
+              : 'Entregado · ${_dateTime(delivered.createdAt)}');
+        },
+      );
+}
+
+class _CourierError extends StatelessWidget {
+  const _CourierError({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_outlined, size: 52),
+              const SizedBox(height: 12),
+              Text(message, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: onRetry, child: const Text('Reintentar')),
+            ],
+          ),
+        ),
+      );
+}
+
+String _statusLabel(String status) =>
+    const {
+      'ASSIGNED': 'Asignada',
+      'ACCEPTED': 'Aceptada',
+      'ARRIVED_AT_MERCHANT': 'Llegué al comercio',
+      'PICKED_UP': 'Pedido recogido',
+      'IN_TRANSIT': 'En camino',
+      'ARRIVED_AT_CUSTOMER': 'Llegué al destino',
+      'DELIVERED': 'Entregada',
+      'FAILED': 'Fallida',
+      'CANCELLED': 'Cancelada',
+      'REJECTED': 'Rechazada',
+    }[status] ??
+    status;
+
+String _dateTime(String value) =>
+    DateFormat('dd/MM/yyyy · HH:mm').format(DateTime.parse(value).toLocal());

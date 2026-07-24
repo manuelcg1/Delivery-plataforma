@@ -25,3 +25,11 @@ final realtimeClientProvider = Provider((ref) {
   ref.onDispose(client.dispose);
   return client;
 });
+final customerRealtimeClientProvider = Provider((ref) {
+  final client = RealtimeClient(
+      ref.watch(configProvider).wsBaseUrl, ref.watch(sessionStoreProvider));
+  ref.onDispose(client.dispose);
+  return client;
+});
+
+final customerMainTabProvider = StateProvider<int>((_) => 0);

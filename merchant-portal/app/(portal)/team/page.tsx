@@ -1,0 +1,1 @@
+import{Users}from'lucide-react';import{ModulePage}from'@/components/module-page';export default function Team(){return <ModulePage title="Equipo"description="Personal y asignaciones por sucursal"icon={Users}/>}

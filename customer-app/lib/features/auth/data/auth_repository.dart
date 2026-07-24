@@ -7,13 +7,26 @@ class SessionUser {
     required this.firstName,
     required this.tenantCode,
     required this.tenantId,
+    required this.roles,
+    required this.permissions,
   });
   final String id, firstName, tenantCode, tenantId;
+  final Set<String> roles;
+  final Set<String> permissions;
+  bool get isCourier =>
+      roles.contains('COURIER') ||
+      permissions.contains('COURIER_AVAILABILITY_MANAGE');
   factory SessionUser.fromJson(Map<String, dynamic> j) => SessionUser(
         id: j['id'] as String,
         firstName: j['firstName'] as String,
         tenantCode: (j['tenant'] as Map<String, dynamic>)['code'] as String,
         tenantId: (j['tenant'] as Map<String, dynamic>)['id'] as String,
+        roles: ((j['roles'] as List<dynamic>?) ?? const [])
+            .map((role) => role.toString())
+            .toSet(),
+        permissions: ((j['permissions'] as List<dynamic>?) ?? const [])
+            .map((permission) => permission.toString())
+            .toSet(),
       );
 }
 

@@ -18,6 +18,17 @@ class RealtimeClient {
   Stream<RealtimeEvent> get events => _events.stream;
   Future<void> connect(
       {required String tenantId, required String deliveryId}) async {
+    await _connect('/topic/tenants/$tenantId/deliveries/$deliveryId');
+  }
+
+  Future<void> connectAudience({
+    required String tenantId,
+    required String audience,
+  }) async {
+    await _connect('/topic/tenants/$tenantId/$audience');
+  }
+
+  Future<void> _connect(String destination) async {
     disconnect();
     final token = await store.accessToken();
     final headers = {'Authorization': 'Bearer $token'};
@@ -31,8 +42,7 @@ class RealtimeClient {
             heartbeatOutgoing: const Duration(seconds: 10),
             onConnect: (frame) {
               _client?.subscribe(
-                  destination:
-                      '/topic/tenants/$tenantId/deliveries/$deliveryId',
+                  destination: destination,
                   callback: (frame) {
                     if (frame.body == null) return;
                     final json =

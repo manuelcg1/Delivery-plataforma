@@ -1,0 +1,1 @@
+import{Bell}from'lucide-react';import{ModulePage}from'@/components/module-page';export default function Notifications(){return <ModulePage title="Notificaciones"description="Alertas de la operación"icon={Bell}/>}
