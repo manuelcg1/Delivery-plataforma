@@ -1,7 +1,7 @@
 param(
   [ValidateSet('staging','production')][string]$Environment = 'production',
-  [Parameter(Mandatory=$true)][string]$ApiBaseUrl,
-  [Parameter(Mandatory=$true)][string]$WsBaseUrl,
+  [string]$ApiBaseUrl = 'https://api.cerka.site',
+  [string]$WsBaseUrl = 'wss://api.cerka.site',
   [switch]$AppBundle
 )
 $ErrorActionPreference='Stop'

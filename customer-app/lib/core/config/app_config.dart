@@ -1,6 +1,9 @@
 enum AppEnvironment { development, staging, production }
 
 class AppConfig {
+  static const productionApiBaseUrl = 'https://api.cerka.site';
+  static const productionWsBaseUrl = 'wss://api.cerka.site';
+
   const AppConfig({
     required this.environment,
     required this.apiBaseUrl,
@@ -20,11 +23,16 @@ class AppConfig {
     );
     const configuredApi = String.fromEnvironment('API_BASE_URL');
     const configuredWs = String.fromEnvironment('WS_BASE_URL');
+    final defaultApi = environment == AppEnvironment.production
+        ? productionApiBaseUrl
+        : 'http://10.0.2.2:8080';
+    final defaultWs = environment == AppEnvironment.production
+        ? productionWsBaseUrl
+        : 'ws://10.0.2.2:8080';
     return AppConfig(
       environment: environment,
-      apiBaseUrl:
-          configuredApi.isEmpty ? 'http://10.0.2.2:8080' : configuredApi,
-      wsBaseUrl: configuredWs.isEmpty ? 'ws://10.0.2.2:8080' : configuredWs,
+      apiBaseUrl: configuredApi.isEmpty ? defaultApi : configuredApi,
+      wsBaseUrl: configuredWs.isEmpty ? defaultWs : configuredWs,
     );
   }
 }

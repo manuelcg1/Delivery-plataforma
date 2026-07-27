@@ -7,4 +7,9 @@ void main() {
     expect(config.environment, AppEnvironment.development);
     expect(config.apiBaseUrl, contains('10.0.2.2'));
   });
+
+  test('defines the Cerka production endpoints', () {
+    expect(AppConfig.productionApiBaseUrl, 'https://api.cerka.site');
+    expect(AppConfig.productionWsBaseUrl, 'wss://api.cerka.site');
+  });
 }
