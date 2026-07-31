@@ -21,13 +21,13 @@ final apiClientProvider = Provider(
 );
 final realtimeClientProvider = Provider((ref) {
   final client = RealtimeClient(
-      ref.watch(configProvider).wsBaseUrl, ref.watch(sessionStoreProvider));
+      ref.watch(configProvider).realtimeUrl, ref.watch(sessionStoreProvider));
   ref.onDispose(client.dispose);
   return client;
 });
 final customerRealtimeClientProvider = Provider((ref) {
   final client = RealtimeClient(
-      ref.watch(configProvider).wsBaseUrl, ref.watch(sessionStoreProvider));
+      ref.watch(configProvider).realtimeUrl, ref.watch(sessionStoreProvider));
   ref.onDispose(client.dispose);
   return client;
 });

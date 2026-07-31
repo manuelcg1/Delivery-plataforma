@@ -14,7 +14,9 @@ class RealtimeGatewayTest {
     @Test
     void publishesOnlyToTenantScopedDestination() {
         SimpMessagingTemplate messaging = mock(SimpMessagingTemplate.class);
-        RealtimeGateway gateway = new RealtimeGateway(messaging);
+        RealtimeGateway gateway = new RealtimeGateway(messaging,
+                mock(org.springframework.jdbc.core.simple.JdbcClient.class, org.mockito.Mockito.RETURNS_DEEP_STUBS),
+                mock(CourierTrackingEventPublisher.class));
         UUID tenant = UUID.randomUUID();
         UUID delivery = UUID.randomUUID();
         gateway.delivery(tenant, delivery, "LocationUpdated", "payload");
@@ -24,7 +26,9 @@ class RealtimeGatewayTest {
     @Test
     void publishesCourierNotificationToTheSpecificUserAudience() {
         SimpMessagingTemplate messaging = mock(SimpMessagingTemplate.class);
-        RealtimeGateway gateway = new RealtimeGateway(messaging);
+        RealtimeGateway gateway = new RealtimeGateway(messaging,
+                mock(org.springframework.jdbc.core.simple.JdbcClient.class, org.mockito.Mockito.RETURNS_DEEP_STUBS),
+                mock(CourierTrackingEventPublisher.class));
         UUID tenant = UUID.randomUUID();
         UUID courierUser = UUID.randomUUID();
         gateway.tenant(tenant, "courier/" + courierUser, "COURIER_ASSIGNMENT_PENDING", "payload");

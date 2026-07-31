@@ -16,6 +16,7 @@ class TrackingServiceTest {
             mock(org.springframework.jdbc.core.simple.JdbcClient.class),
             mock(org.springframework.data.redis.core.StringRedisTemplate.class),
             mock(com.delivery.platform.tracking.realtime.RealtimeGateway.class),
+            mock(com.delivery.platform.tracking.realtime.CourierTrackingEventPublisher.class),
             BigDecimal.valueOf(100), BigDecimal.valueOf(180));
 
     @Test

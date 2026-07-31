@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../auth/session_store.dart';
 import '../errors/app_exception.dart';
@@ -34,6 +35,13 @@ class ApiClient {
     DioException error,
     ErrorInterceptorHandler handler,
   ) async {
+    if (kDebugMode) {
+      debugPrint(
+        '[ApiClient] request failed method=${error.requestOptions.method} '
+        'path=${error.requestOptions.path} status=${error.response?.statusCode} '
+        'type=${error.type.name}',
+      );
+    }
     if (error.response?.statusCode == 401 &&
         !_refreshing &&
         !error.requestOptions.path.contains('/auth/refresh')) {
@@ -74,7 +82,9 @@ class ApiClient {
         type: error.type,
         error: AppException(
           map?['message']?.toString() ?? _friendly(error),
-          code: map?['code']?.toString() ?? 'NETWORK_ERROR',
+          code: map?['code']?.toString() ??
+              map?['error']?.toString() ??
+              (error.response == null ? 'NETWORK_ERROR' : 'HTTP_ERROR'),
           fieldErrors: details,
         ),
       ),

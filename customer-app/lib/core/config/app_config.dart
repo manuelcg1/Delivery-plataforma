@@ -2,16 +2,20 @@ enum AppEnvironment { development, staging, production }
 
 class AppConfig {
   static const productionApiBaseUrl = 'https://api.cerka.site';
+  static const productionRealtimeUrl = 'wss://api.cerka.site/api/v1/realtime';
   static const productionWsBaseUrl = 'wss://api.cerka.site';
 
   const AppConfig({
     required this.environment,
     required this.apiBaseUrl,
-    required this.wsBaseUrl,
+    required this.realtimeUrl,
+    required this.mapTileUrl,
   });
   final AppEnvironment environment;
   final String apiBaseUrl;
-  final String wsBaseUrl;
+  final String realtimeUrl;
+  final String mapTileUrl;
+  String get wsBaseUrl => realtimeUrl;
   static AppConfig fromEnvironment() {
     const name = String.fromEnvironment(
       'ENVIRONMENT',
@@ -22,17 +26,29 @@ class AppConfig {
       orElse: () => AppEnvironment.development,
     );
     const configuredApi = String.fromEnvironment('API_BASE_URL');
-    const configuredWs = String.fromEnvironment('WS_BASE_URL');
+    const configuredRealtime = String.fromEnvironment('REALTIME_URL');
+    const legacyWs = String.fromEnvironment('WS_BASE_URL');
+    const configuredTiles = String.fromEnvironment('MAP_TILE_URL');
     final defaultApi = environment == AppEnvironment.production
         ? productionApiBaseUrl
         : 'http://10.0.2.2:8080';
-    final defaultWs = environment == AppEnvironment.production
-        ? productionWsBaseUrl
-        : 'ws://10.0.2.2:8080';
+    final defaultRealtime = environment == AppEnvironment.production
+        ? productionRealtimeUrl
+        : 'ws://10.0.2.2:8080/api/v1/realtime';
+    final realtime = configuredRealtime.isNotEmpty
+        ? configuredRealtime
+        : legacyWs.isNotEmpty
+            ? (legacyWs.endsWith('/api/v1/realtime')
+                ? legacyWs
+                : '$legacyWs/api/v1/realtime')
+            : defaultRealtime;
     return AppConfig(
       environment: environment,
       apiBaseUrl: configuredApi.isEmpty ? defaultApi : configuredApi,
-      wsBaseUrl: configuredWs.isEmpty ? defaultWs : configuredWs,
+      realtimeUrl: realtime,
+      mapTileUrl: configuredTiles.isEmpty
+          ? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+          : configuredTiles,
     );
   }
 }

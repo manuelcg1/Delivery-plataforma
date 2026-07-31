@@ -8,6 +8,8 @@ import '../../home/data/customer_repository.dart';
 import '../../home/presentation/home_page.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../data/commerce_repository.dart';
+import '../../customer_tracking/presentation/customer_order_tracking_page.dart';
+import '../../customer_tracking/presentation/customer_tracking_controller.dart';
 
 final commerceRepositoryProvider = Provider(
   (ref) => CommerceRepository(ref.watch(apiClientProvider)),
@@ -401,10 +403,35 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
                             _orderDate(order.createdAt),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
+                          if (trackableDeliveryStatuses
+                              .contains(order.status)) ...[
+                            const SizedBox(height: 6),
+                            TextButton.icon(
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder: (_) => CustomerOrderTrackingPage(
+                                    orderId: order.id,
+                                    orderNumber: order.number,
+                                  ),
+                                ),
+                              ),
+                              icon: const Icon(Icons.delivery_dining),
+                              label: const Text('Seguir pedido'),
+                            ),
+                          ],
                         ],
                       ),
-                      trailing: Text(
-                        '${order.currency} ${order.total.toStringAsFixed(2)}',
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                              '${order.currency} ${order.total.toStringAsFixed(2)}'),
+                          if (order.status == 'DELIVERED')
+                            const Text('Entregado',
+                                style: TextStyle(color: Colors.green)),
+                        ],
                       ),
                       onTap: () => Navigator.push(
                         context,
@@ -515,7 +542,22 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                   deliveryId: deliveryId,
                   currentStatus: currentStatus,
                 ),
-              if (deliveryId != null)
+              if (trackableDeliveryStatuses.contains(currentStatus))
+                FilledButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => CustomerOrderTrackingPage(
+                        orderId: order.id,
+                        orderNumber: order.number,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.map_outlined),
+                  label: const Text('Seguir pedido'),
+                ),
+              if (deliveryId != null &&
+                  !terminalDeliveryStatuses.contains(currentStatus))
                 FilledButton.tonalIcon(
                     onPressed: () => Navigator.push(
                         context,

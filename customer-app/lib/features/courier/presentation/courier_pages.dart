@@ -6,6 +6,8 @@ import '../../../core/providers.dart';
 import '../../../core/realtime/realtime_client.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../data/courier_repository.dart';
+import '../tracking/domain/tracking_policy.dart';
+import '../tracking/presentation/courier_tracking_controller.dart';
 
 final courierRepositoryProvider = Provider(
   (ref) => CourierRepository(ref.watch(apiClientProvider)),
@@ -130,10 +132,21 @@ class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
 
   Future<(CourierProfile, List<CourierDelivery>)> load() async {
     final repository = ref.read(courierRepositoryProvider);
-    return (await repository.profile(), await repository.deliveries());
+    final profile = await repository.profile();
+    final deliveries = await repository.deliveries();
+    Future.microtask(() => ref
+        .read(courierTrackingControllerProvider.notifier)
+        .restoreFromBackend(deliveries));
+    return (profile, deliveries);
   }
 
-  void refresh() => setState(() => future = load());
+  void refresh() {
+    if (!mounted) return;
+    final nextLoad = load();
+    setState(() {
+      future = nextLoad;
+    });
+  }
 
   @override
   Widget build(BuildContext context) => FutureBuilder(
@@ -313,13 +326,45 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
     if (next == null) return;
     setState(() => busy = true);
     try {
+      final tracking = ref.read(courierTrackingControllerProvider.notifier);
+      if (shouldStartTracking(next)) {
+        final started = await tracking.startTracking(
+          deliveryId: delivery.id,
+          status: next,
+        );
+        if (!started) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                'Activa la ubicación para iniciar la entrega.',
+              ),
+            ));
+          }
+          return;
+        }
+      }
+      if (next == 'DELIVERED') {
+        await tracking.sendFinalLocation();
+      }
       delivery = await ref
           .read(courierRepositoryProvider)
           .updateDelivery(delivery.id, next);
+      await tracking.synchronizeDelivery(delivery);
       refreshHistory();
       if (next == 'DELIVERED' && mounted) {
         Navigator.pop(context);
         return;
+      }
+    } catch (error) {
+      if (mounted) {
+        final message = ref.read(apiClientProvider).exception(error).message;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+      if (shouldStartTracking(next)) {
+        await ref
+            .read(courierTrackingControllerProvider.notifier)
+            .stopTracking();
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -327,6 +372,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
   }
 
   Future<void> respond(String status) async {
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => busy = true);
     try {
       delivery = await ref
@@ -337,8 +383,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
     } catch (error) {
       if (mounted) {
         final message = ref.read(apiClientProvider).exception(error).message;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
+        messenger.showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -357,6 +402,10 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
               style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
           Chip(label: Text(_statusLabel(delivery.status))),
+          if (shouldContinueTracking(delivery.status)) ...[
+            const SizedBox(height: 12),
+            const _TrackingStatusCard(),
+          ],
           const SizedBox(height: 20),
           Text('Línea de tiempo',
               style: Theme.of(context).textTheme.titleLarge),
@@ -432,6 +481,103 @@ class CourierNotificationsPage extends ConsumerStatefulWidget {
   @override
   ConsumerState<CourierNotificationsPage> createState() =>
       _CourierNotificationsPageState();
+}
+
+class _TrackingStatusCard extends ConsumerWidget {
+  const _TrackingStatusCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(courierTrackingControllerProvider);
+    final (icon, color, title, detail, retry) = switch (state) {
+      TrackingActive(:final lastSentAt, :final sending) => (
+          Icons.gps_fixed,
+          Colors.green,
+          sending ? 'Enviando ubicación' : 'Ubicación compartida',
+          lastSentAt == null
+              ? 'GPS activo'
+              : 'Actualizada ${_relativeTime(lastSentAt)}',
+          false,
+        ),
+      TrackingOffline() => (
+          Icons.cloud_off,
+          Colors.orange,
+          'Sin conexión',
+          'Se enviará al reconectar',
+          true,
+        ),
+      TrackingGpsDisabled() => (
+          Icons.location_disabled,
+          Colors.red,
+          'GPS desactivado',
+          'Activa la ubicación para continuar',
+          true,
+        ),
+      TrackingPermissionDenied(:final permanently) => (
+          Icons.location_off,
+          Colors.red,
+          'Permiso requerido',
+          permanently
+              ? 'El permiso fue bloqueado. Actívalo desde Configuración.'
+              : 'Cerka necesita acceso a tu ubicación durante la entrega.',
+          true,
+        ),
+      TrackingError(:final message) => (
+          Icons.error_outline,
+          Colors.red,
+          'Error de ubicación',
+          message,
+          true,
+        ),
+      TrackingStarting() || TrackingRequestingPermission() => (
+          Icons.gps_not_fixed,
+          Colors.blue,
+          'Iniciando GPS',
+          'Comprobando ubicación…',
+          false,
+        ),
+      _ => (
+          Icons.location_off,
+          Colors.grey,
+          'Seguimiento detenido',
+          'La ubicación no se está compartiendo',
+          true,
+        ),
+    };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  Text(detail),
+                ],
+              ),
+            ),
+            if (retry)
+              TextButton(
+                onPressed: () => ref
+                    .read(courierTrackingControllerProvider.notifier)
+                    .resumeTracking(),
+                child: const Text('Reintentar ubicación'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _relativeTime(DateTime value) {
+  final seconds = DateTime.now().difference(value).inSeconds.clamp(0, 9999);
+  if (seconds < 60) return 'hace $seconds segundos';
+  return 'hace ${seconds ~/ 60} min';
 }
 
 class _CourierNotificationsPageState

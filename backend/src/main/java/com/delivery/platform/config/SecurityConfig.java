@@ -4,6 +4,7 @@ import com.delivery.platform.identity.security.JwtFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.*;
@@ -27,6 +28,8 @@ public class SecurityConfig {
             throws Exception {
         return h.csrf(x -> x.disable()).cors(x -> x.configurationSource(cors))
                 .sessionManagement(x -> x.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(x -> x.authenticationEntryPoint((request, response, exception) ->
+                        response.sendError(HttpStatus.UNAUTHORIZED.value(), "Unauthorized")))
                 .authorizeHttpRequests(x -> x
                         .requestMatchers("/api/v1/public/**", "/actuator/health", "/actuator/health/**")
                         .permitAll()

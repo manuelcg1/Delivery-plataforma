@@ -3,6 +3,7 @@ package com.delivery.platform.tracking.application;
 import com.delivery.platform.common.ApiException;
 import com.delivery.platform.identity.security.IdentityPrincipal;
 import com.delivery.platform.tracking.realtime.RealtimeGateway;
+import com.delivery.platform.tracking.realtime.CourierTrackingEventPublisher;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,19 +36,23 @@ public class TrackingService {
     public record Tracking(UUID deliveryId, String status, String deliveryType, UUID courierId,
                            String courierName, String vehicleType, Location location, Eta eta,
                            String addressLine, String district, Instant updatedAt) {}
+    record ActiveDelivery(UUID deliveryId, UUID orderId, UUID customerUserId, String status) {}
 
     private final JdbcClient db;
     private final StringRedisTemplate redis;
     private final RealtimeGateway realtime;
+    private final CourierTrackingEventPublisher trackingEvents;
     private final BigDecimal maximumAccuracy;
     private final BigDecimal maximumSpeedKph;
 
     public TrackingService(JdbcClient db, StringRedisTemplate redis, RealtimeGateway realtime,
+                           CourierTrackingEventPublisher trackingEvents,
                            @Value("${tracking.maximum-accuracy-meters:100}") BigDecimal maximumAccuracy,
                            @Value("${tracking.maximum-speed-kph:180}") BigDecimal maximumSpeedKph) {
         this.db = db;
         this.redis = redis;
         this.realtime = realtime;
+        this.trackingEvents = trackingEvents;
         this.maximumAccuracy = maximumAccuracy;
         this.maximumSpeedKph = maximumSpeedKph;
     }
@@ -77,27 +83,36 @@ public class TrackingService {
     public Optional<Location> location(IdentityPrincipal principal, LocationCommand command) {
         CourierMe courier = me(principal);
         validate(command);
+        ActiveDelivery delivery = activeTrackingDelivery(principal.tenantId(), courier.id())
+                .orElseThrow(() -> error(HttpStatus.CONFLICT, "ACTIVE_DELIVERY_NOT_TRACKABLE",
+                        "No existe una entrega activa compatible con el seguimiento"));
+        UUID deliveryId = delivery.deliveryId();
         Location previous = current(principal.tenantId(), courier.id()).orElse(null);
         if (previous != null && duplicate(previous, command)) return Optional.empty();
         if (previous != null && impossible(previous, command))
             throw error(HttpStatus.UNPROCESSABLE_ENTITY, "LOCATION_JUMP_IMPOSSIBLE", "La ubicación implica un salto imposible");
 
-        UUID deliveryId = activeDelivery(principal.tenantId(), courier.id()).orElse(null);
         UUID id = UUID.randomUUID();
         db.sql("insert into courier_location_history(id,tenant_id,courier_id,delivery_id,latitude,longitude,speed,heading,accuracy,altitude,provider,battery_level,gps_timestamp) values(:i,:t,:c,:d,:la,:lo,:s,:h,:a,:al,:p,:b,:g)")
                 .param("i", id).param("t", principal.tenantId()).param("c", courier.id()).param("d", deliveryId)
                 .param("la", command.latitude()).param("lo", command.longitude()).param("s", command.speed())
                 .param("h", command.heading()).param("a", command.accuracy()).param("al", command.altitude())
-                .param("p", command.provider()).param("b", command.batteryLevel()).param("g", command.gpsTimestamp()).update();
+                .param("p", command.provider()).param("b", command.batteryLevel())
+                .param("g", Timestamp.from(command.gpsTimestamp())).update();
         db.sql("insert into courier_locations(id,tenant_id,courier_id,latitude,longitude,speed,heading,accuracy,altitude,provider,battery_level,gps_timestamp) values(:i,:t,:c,:la,:lo,:s,:h,:a,:al,:p,:b,:g) on conflict(tenant_id,courier_id) do update set id=excluded.id,latitude=excluded.latitude,longitude=excluded.longitude,speed=excluded.speed,heading=excluded.heading,accuracy=excluded.accuracy,altitude=excluded.altitude,provider=excluded.provider,battery_level=excluded.battery_level,gps_timestamp=excluded.gps_timestamp,received_at=now()")
                 .param("i", id).param("t", principal.tenantId()).param("c", courier.id())
                 .param("la", command.latitude()).param("lo", command.longitude()).param("s", command.speed())
                 .param("h", command.heading()).param("a", command.accuracy()).param("al", command.altitude())
-                .param("p", command.provider()).param("b", command.batteryLevel()).param("g", command.gpsTimestamp()).update();
+                .param("p", command.provider()).param("b", command.batteryLevel())
+                .param("g", Timestamp.from(command.gpsTimestamp())).update();
         Location saved = current(principal.tenantId(), courier.id()).orElseThrow();
         redis.opsForValue().set("tracking:" + principal.tenantId() + ":courier:" + courier.id(),
                 command.latitude() + "," + command.longitude() + "," + command.gpsTimestamp(), Duration.ofMinutes(5));
-        event(principal.tenantId(), courier.id(), deliveryId, "LocationUpdated", saved);
+        db.sql("insert into tracking_events(tenant_id,delivery_id,courier_id,event_type,payload) values(:t,:d,:c,'LocationUpdated',cast(:p as jsonb))")
+                .param("t", principal.tenantId()).param("d", deliveryId).param("c", courier.id())
+                .param("p", "{\"source\":\"courier-api\"}").update();
+        trackingEvents.publishLocationUpdated(principal.tenantId(), delivery.customerUserId(), courier.id(),
+                delivery.orderId(), deliveryId, delivery.status(), saved);
         return Optional.of(saved);
     }
 
@@ -122,7 +137,9 @@ public class TrackingService {
 
     public List<Location> history(IdentityPrincipal principal, UUID courierId, Instant from, Instant to) {
         return db.sql("select h.* from courier_location_history h where h.tenant_id=:t and h.courier_id=:c and (cast(:f as timestamptz) is null or h.gps_timestamp>=:f) and (cast(:x as timestamptz) is null or h.gps_timestamp<=:x) order by h.gps_timestamp desc limit 1000")
-                .param("t", principal.tenantId()).param("c", courierId).param("f", from).param("x", to)
+                .param("t", principal.tenantId()).param("c", courierId)
+                .param("f", from == null ? null : Timestamp.from(from))
+                .param("x", to == null ? null : Timestamp.from(to))
                 .query((r, n) -> map(r)).list();
     }
 
@@ -169,9 +186,12 @@ public class TrackingService {
                 .param("t", tenantId).param("c", courierId).query((r, n) -> map(r)).optional();
     }
 
-    private Optional<UUID> activeDelivery(UUID tenantId, UUID courierId) {
-        return db.sql("select id from deliveries where tenant_id=:t and courier_id=:c and status not in('DELIVERED','FAILED','CANCELLED','REJECTED','EXPIRED') order by created_at desc limit 1")
-                .param("t", tenantId).param("c", courierId).query(UUID.class).optional();
+    private Optional<ActiveDelivery> activeTrackingDelivery(UUID tenantId, UUID courierId) {
+        return db.sql("select id,order_id,customer_id,status from deliveries where tenant_id=:t and courier_id=:c and status in('PICKED_UP','IN_TRANSIT','ARRIVED_AT_CUSTOMER') order by created_at desc limit 1")
+                .param("t", tenantId).param("c", courierId)
+                .query((r, n) -> new ActiveDelivery(r.getObject("id", UUID.class),
+                        r.getObject("order_id", UUID.class), r.getObject("customer_id", UUID.class),
+                        r.getString("status"))).optional();
     }
 
     private Location map(java.sql.ResultSet r) throws java.sql.SQLException {

@@ -42,6 +42,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.enableSimpleBroker("/topic", "/queue");
         registry.setApplicationDestinationPrefixes("/app");
+        registry.setUserDestinationPrefix("/user");
     }
 
     @Override
@@ -64,7 +65,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         });
     }
 
-    private void authenticate(StompHeaderAccessor accessor) {
+    void authenticate(StompHeaderAccessor accessor) {
         if (principal(accessor) != null) return;
         String authorization = accessor.getFirstNativeHeader("Authorization");
         if (authorization == null || !authorization.startsWith("Bearer ")) {
@@ -82,11 +83,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         }
     }
 
-    private void authorizeSubscription(StompHeaderAccessor accessor) {
+    void authorizeSubscription(StompHeaderAccessor accessor) {
         IdentityPrincipal principal = principal(accessor);
         String destination = accessor.getDestination();
         if (principal == null || destination == null) {
             throw new AccessDeniedException("Suscripción no autorizada");
+        }
+        String customerPrefix = "/user/queue/orders/";
+        if (destination.startsWith(customerPrefix)) {
+            authorizeCustomerTracking(principal, destination, customerPrefix);
+            return;
         }
         String prefix = "/topic/tenants/" + principal.tenantId() + "/";
         if (!destination.startsWith(prefix)) throw new AccessDeniedException("Tenant no autorizado");
@@ -112,6 +118,26 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .param("user", principal.userId()).param("admin", admin)
                 .query(Integer.class).single();
         if (allowed == 0) throw new AccessDeniedException("Entrega no autorizada");
+    }
+
+    private void authorizeCustomerTracking(IdentityPrincipal principal, String destination, String prefix) {
+        if (!principal.roles().contains("CUSTOMER")) {
+            throw new AccessDeniedException("Canal exclusivo para clientes");
+        }
+        String suffix = destination.substring(prefix.length());
+        if (!suffix.endsWith("/tracking")) throw new AccessDeniedException("Canal inválido");
+        UUID orderId;
+        try {
+            orderId = UUID.fromString(suffix.substring(0, suffix.length() - "/tracking".length()));
+        } catch (Exception exception) {
+            throw new AccessDeniedException("Canal inválido");
+        }
+        int allowed = db.sql("""
+                select count(*) from orders o
+                where o.id=:order and o.tenant_id=:tenant and o.customer_id=:user
+                """).param("order", orderId).param("tenant", principal.tenantId())
+                .param("user", principal.userId()).query(Integer.class).single();
+        if (allowed == 0) throw new AccessDeniedException("Pedido no autorizado");
     }
 
     private IdentityPrincipal principal(StompHeaderAccessor accessor) {

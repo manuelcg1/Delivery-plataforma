@@ -76,3 +76,5 @@ tracking:
   location-interval-seconds: ${TRACKING_LOCATION_INTERVAL_SECONDS:5}
   maximum-accuracy-meters: ${TRACKING_MAXIMUM_ACCURACY_METERS:100}
   maximum-speed-kph: ${TRACKING_MAXIMUM_SPEED_KPH:180}
+  customer:
+    stale-threshold: ${TRACKING_CUSTOMER_STALE_THRESHOLD:PT60S}
