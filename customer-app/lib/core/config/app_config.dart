@@ -15,6 +15,14 @@ class AppConfig {
   final String apiBaseUrl;
   final String realtimeUrl;
   final String mapTileUrl;
+  static final defaultMapLatitude = double.parse(const String.fromEnvironment(
+      'DEFAULT_MAP_LATITUDE',
+      defaultValue: '-16.3989'));
+  static final defaultMapLongitude = double.parse(const String.fromEnvironment(
+      'DEFAULT_MAP_LONGITUDE',
+      defaultValue: '-71.5350'));
+  static final defaultMapZoom = double.parse(
+      const String.fromEnvironment('DEFAULT_MAP_ZOOM', defaultValue: '15'));
   String get wsBaseUrl => realtimeUrl;
   static AppConfig fromEnvironment() {
     const name = String.fromEnvironment(

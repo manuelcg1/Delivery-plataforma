@@ -11,6 +11,7 @@ import '../../auth/presentation/auth_controller.dart';
 import '../data/commerce_repository.dart';
 import '../../customer_tracking/presentation/customer_order_tracking_page.dart';
 import '../../customer_tracking/presentation/customer_tracking_controller.dart';
+import '../../address/presentation/customer_address_form_page.dart';
 
 final commerceRepositoryProvider = Provider(
   (ref) => CommerceRepository(ref.watch(apiClientProvider)),
@@ -24,6 +25,8 @@ final ordersProvider = FutureProvider(
 
 bool shouldPollOrderDetail(String status) =>
     !terminalDeliveryStatuses.contains(status);
+
+const customerOrdersTabIndex = 2;
 
 class ProductPage extends ConsumerStatefulWidget {
   const ProductPage({super.key, required this.merchant, required this.product});
@@ -248,9 +251,36 @@ class CheckoutPage extends ConsumerStatefulWidget {
 
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   String? address;
+  String? coverageAddress;
+  CoverageResult? coverage;
+  bool checkingCoverage = false;
   String method = 'CARD';
   String? errorMessage;
   bool busy = false;
+  Future<void> _validateCoverage(String addressId) async {
+    setState(() {
+      checkingCoverage = true;
+      coverage = null;
+      errorMessage = null;
+    });
+    try {
+      final repository = ref.read(commerceRepositoryProvider);
+      final cart = await repository.cart();
+      final result = await repository.coverage(cart.merchantId, addressId);
+      if (mounted && address == addressId)
+        setState(() {
+          coverage = result;
+          coverageAddress = addressId;
+        });
+    } catch (error) {
+      if (mounted)
+        setState(() => errorMessage =
+            ref.read(commerceRepositoryProvider).errorMessage(error));
+    } finally {
+      if (mounted) setState(() => checkingCoverage = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final addresses = ref.watch(addressesProvider);
@@ -261,25 +291,89 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         children: [
           Text('Dirección', style: Theme.of(context).textTheme.titleLarge),
           addresses.when(
-            data: (items) => DropdownButtonFormField<String>(
-              initialValue: address,
-              items: items
-                  .map(
-                    (e) => DropdownMenuItem(
-                      value: e.id,
-                      child: Text('${e.label} · ${e.addressLine}'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => address = value),
-              decoration: const InputDecoration(
-                labelText: 'Dirección de entrega',
-              ),
-            ),
+            data: (items) {
+              if (address == null && items.isNotEmpty) {
+                address = items
+                    .firstWhere((e) => e.isDefault, orElse: () => items.first)
+                    .id;
+              }
+              if (address != null &&
+                  coverageAddress != address &&
+                  !checkingCoverage) {
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => _validateCoverage(address!));
+              }
+              final selected = items.where((e) => e.id == address).firstOrNull;
+              return Column(children: [
+                DropdownButtonFormField<String>(
+                  initialValue: address,
+                  items: items
+                      .map((e) => DropdownMenuItem(
+                          value: e.id,
+                          child: Text('${e.label} · ${e.addressLine}')))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => address = value);
+                      _validateCoverage(value);
+                    }
+                  },
+                  decoration:
+                      const InputDecoration(labelText: 'Dirección de entrega'),
+                ),
+                if (selected != null)
+                  ListTile(
+                      leading: const Icon(Icons.location_on),
+                      title: Text(selected.formattedAddress),
+                      subtitle: Text(selected.reference ??
+                          'Ubicación validada con coordenadas')),
+                Row(children: [
+                  TextButton.icon(
+                      onPressed: () async {
+                        await Navigator.push<void>(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const CustomerAddressFormPage()));
+                        ref.invalidate(addressesProvider);
+                      },
+                      icon: const Icon(Icons.add_location_alt_outlined),
+                      label: const Text('Agregar nueva')),
+                  if (selected != null)
+                    TextButton.icon(
+                        onPressed: () async {
+                          await Navigator.push<void>(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => CustomerAddressFormPage(
+                                      address: selected)));
+                          ref.invalidate(addressesProvider);
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Editar')),
+                ]),
+              ]);
+            },
             loading: () => const LinearProgressIndicator(),
             error: (e, _) => Text(e.toString()),
           ),
           const SizedBox(height: 20),
+          if (checkingCoverage)
+            const ListTile(
+                leading: CircularProgressIndicator(),
+                title: Text('Validando cobertura…')),
+          if (coverage != null)
+            ListTile(
+                leading: Icon(
+                    coverage!.covered ? Icons.check_circle : Icons.location_off,
+                    color: coverage!.covered
+                        ? Colors.green
+                        : Theme.of(context).colorScheme.error),
+                title: Text(coverage!.message ?? ''),
+                subtitle: coverage!.covered
+                    ? Text(
+                        'Entrega estimada: ${coverage!.estimatedMinutes} min · S/ ${coverage!.deliveryFee?.toStringAsFixed(2)}')
+                    : const Text('Cambia la dirección para continuar')),
           DropdownButtonFormField(
             initialValue: method,
             items: checkoutPaymentMethods.entries
@@ -302,7 +396,10 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           ],
           const SizedBox(height: 24),
           FilledButton(
-            onPressed: busy || address == null
+            onPressed: busy ||
+                    address == null ||
+                    checkingCoverage ||
+                    coverage?.covered != true
                 ? null
                 : () async {
                     setState(() {
@@ -316,15 +413,12 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                       await repository.pay(createdOrder.id, method);
                       ref.invalidate(cartProvider);
                       ref.invalidate(ordersProvider);
-                      if (context.mounted)
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                OrderDetailPage(order: createdOrder!),
-                          ),
-                          (route) => route.isFirst,
-                        );
+                      if (context.mounted) {
+                        ref.read(customerMainTabProvider.notifier).state =
+                            customerOrdersTabIndex;
+                        Navigator.of(context)
+                            .popUntil((route) => route.isFirst);
+                      }
                     } catch (error) {
                       final message = repository.errorMessage(error);
                       if (createdOrder != null) {
@@ -338,14 +432,10 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                               ),
                             ),
                           );
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  OrderDetailPage(order: createdOrder!),
-                            ),
-                            (route) => route.isFirst,
-                          );
+                          ref.read(customerMainTabProvider.notifier).state =
+                              customerOrdersTabIndex;
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst);
                         }
                       } else if (mounted) {
                         setState(() => errorMessage = message);
@@ -371,6 +461,7 @@ class OrdersPage extends ConsumerStatefulWidget {
 
 class _OrdersPageState extends ConsumerState<OrdersPage> {
   StreamSubscription<RealtimeEvent>? subscription;
+  Timer? fallbackRefresh;
 
   @override
   void initState() {
@@ -387,11 +478,15 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
         audience: 'customers',
       );
     });
+    fallbackRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) ref.invalidate(ordersProvider);
+    });
   }
 
   @override
   void dispose() {
     subscription?.cancel();
+    fallbackRefresh?.cancel();
     ref.read(customerRealtimeClientProvider).disconnect();
     super.dispose();
   }

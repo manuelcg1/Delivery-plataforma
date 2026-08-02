@@ -4,6 +4,7 @@ import '../../../core/providers.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../orders/presentation/commerce_pages.dart';
+import '../../address/presentation/customer_address_form_page.dart';
 import '../data/customer_repository.dart';
 
 final customerRepositoryProvider = Provider(
@@ -118,10 +119,10 @@ class AddressesPage extends ConsumerWidget {
   const AddressesPage({super.key});
 
   Future<void> _openForm(BuildContext context, Address? address) =>
-      showDialog<void>(
-        context: context,
-        builder: (_) => AddressDialog(address: address),
-      );
+      Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+              builder: (_) => CustomerAddressFormPage(address: address)));
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => Scaffold(
@@ -178,6 +179,16 @@ class AddressesPage extends ConsumerWidget {
                                       icon: const Icon(Icons.edit_outlined),
                                       onPressed: () =>
                                           _openForm(context, address),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Eliminar dirección',
+                                      icon: const Icon(Icons.delete_outline),
+                                      onPressed: () async {
+                                        await ref
+                                            .read(customerRepositoryProvider)
+                                            .deleteAddress(address.id);
+                                        ref.invalidate(addressesProvider);
+                                      },
                                     ),
                                   ],
                                 ),

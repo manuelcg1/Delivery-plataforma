@@ -88,6 +88,10 @@ services:
       FIREBASE_ENABLED: "true"
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-cerka-delivery}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-service-account.json
+      GOOGLE_PLACES_ENABLED: "true"
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:?GOOGLE_MAPS_API_KEY is required}
+      GOOGLE_PLACES_COUNTRY: ${GOOGLE_PLACES_COUNTRY:-PE}
+      GOOGLE_PLACES_LANGUAGE: ${GOOGLE_PLACES_LANGUAGE:-es}
     volumes:
       - ${FIREBASE_SERVICE_ACCOUNT_FILE:?FIREBASE_SERVICE_ACCOUNT_FILE is required}:/run/secrets/firebase-service-account.json:ro
     depends_on:

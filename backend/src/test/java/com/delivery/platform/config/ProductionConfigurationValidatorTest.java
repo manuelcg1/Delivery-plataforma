@@ -33,4 +33,17 @@ class ProductionConfigurationValidatorTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Invalid production configuration");
     }
+
+    @Test
+    void requiresGoogleKeyOnlyWhenPlacesIsEnabled() {
+        var validator = new ProductionConfigurationValidator(
+                "a-strong-random-jwt-secret-that-is-more-than-forty-eight-characters",
+                "https://admin.example.com", "https://admin.example.com",
+                "a-strong-random-webhook-secret-more-than-thirty-two",
+                "https://media.example.com", "CASH_ONLY", true, "");
+
+        assertThatThrownBy(validator::validate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("GOOGLE_MAPS_API_KEY");
+    }
 }

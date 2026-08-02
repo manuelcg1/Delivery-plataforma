@@ -16,6 +16,12 @@ public class ProductionConfigurationValidator {
     private final String webhookSecret;
     private final String minioPublicEndpoint;
     private final String paymentProvider;
+    private final boolean googlePlacesEnabled;
+    private final String googleMapsApiKey;
+
+    ProductionConfigurationValidator(String jwtSecret,String frontendUrl,String corsOrigins,String webhookSecret,String minioPublicEndpoint,String paymentProvider) {
+        this(jwtSecret,frontendUrl,corsOrigins,webhookSecret,minioPublicEndpoint,paymentProvider,false,"");
+    }
 
     public ProductionConfigurationValidator(
             @Value("${identity.jwt-secret}") String jwtSecret,
@@ -23,13 +29,17 @@ public class ProductionConfigurationValidator {
             @Value("${CORS_ALLOWED_ORIGINS}") String corsOrigins,
             @Value("${PAYMENT_WEBHOOK_SECRET}") String webhookSecret,
             @Value("${MINIO_PUBLIC_ENDPOINT}") String minioPublicEndpoint,
-            @Value("${PAYMENT_PROVIDER:CASH_ONLY}") String paymentProvider) {
+            @Value("${PAYMENT_PROVIDER:CASH_ONLY}") String paymentProvider,
+            @Value("${google.places.enabled:false}") boolean googlePlacesEnabled,
+            @Value("${google.places.api-key:}") String googleMapsApiKey) {
         this.jwtSecret = jwtSecret;
         this.frontendUrl = frontendUrl;
         this.corsOrigins = corsOrigins;
         this.webhookSecret = webhookSecret;
         this.minioPublicEndpoint = minioPublicEndpoint;
         this.paymentProvider = paymentProvider;
+        this.googlePlacesEnabled = googlePlacesEnabled;
+        this.googleMapsApiKey = googleMapsApiKey;
     }
 
     @PostConstruct
@@ -43,6 +53,9 @@ public class ProductionConfigurationValidator {
                 .forEach(origin -> requireHttps("CORS_ALLOWED_ORIGINS", origin));
         if (!"CASH_ONLY".equalsIgnoreCase(paymentProvider)) {
             throw invalid("PAYMENT_PROVIDER must be CASH_ONLY until a real payment provider is implemented");
+        }
+        if (googlePlacesEnabled && googleMapsApiKey.isBlank()) {
+            throw invalid("GOOGLE_MAPS_API_KEY must be configured when GOOGLE_PLACES_ENABLED=true");
         }
     }
 

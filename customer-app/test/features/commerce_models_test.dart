@@ -2,6 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:delivery_customer/features/orders/data/commerce_repository.dart';
 
 void main() {
+  test('empty cart has no stale items or total', () {
+    final cart = Cart.empty(currency: 'PEN');
+
+    expect(cart.items, isEmpty);
+    expect(cart.total, 0);
+    expect(cart.currency, 'PEN');
+  });
+
   test('maps server cart totals without trusting local prices', () {
     final cart = Cart.fromJson({
       'items': [

@@ -82,3 +82,9 @@ notifications:
   firebase-enabled: ${FIREBASE_ENABLED:false}
   firebase-project-id: ${FIREBASE_PROJECT_ID:cerka-delivery}
   firebase-service-account-base64: ${FIREBASE_SERVICE_ACCOUNT_BASE64:}
+google:
+  places:
+    enabled: ${GOOGLE_PLACES_ENABLED:false}
+    api-key: ${GOOGLE_MAPS_API_KEY:}
+    country: ${GOOGLE_PLACES_COUNTRY:PE}
+    language: ${GOOGLE_PLACES_LANGUAGE:es}

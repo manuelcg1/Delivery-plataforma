@@ -31,17 +31,47 @@ class Cart {
     required this.items,
     required this.total,
     required this.currency,
+    required this.merchantId,
+    required this.branchId,
   });
   final List<CartItem> items;
   final double total;
-  final String currency;
+  final String currency, merchantId, branchId;
+  factory Cart.empty({String currency = 'PEN'}) => Cart(
+        items: const [],
+        total: 0,
+        currency: currency,
+        merchantId: '',
+        branchId: '',
+      );
   factory Cart.fromJson(Map<String, dynamic> j) => Cart(
         items: (j['items'] as List<dynamic>)
             .map((e) => CartItem.fromJson(e as Map<String, dynamic>))
             .toList(),
         total: (j['total'] as num).toDouble(),
         currency: j['currency'] as String,
+        merchantId: j['merchantId']?.toString() ?? '',
+        branchId: j['branchId']?.toString() ?? '',
       );
+}
+
+class CoverageResult {
+  const CoverageResult(
+      {required this.covered,
+      this.deliveryFee,
+      this.estimatedMinutes,
+      this.zoneId,
+      this.message});
+  final bool covered;
+  final double? deliveryFee;
+  final int? estimatedMinutes;
+  final String? zoneId, message;
+  factory CoverageResult.fromJson(Map<String, dynamic> json) => CoverageResult(
+      covered: json['covered'] as bool,
+      deliveryFee: (json['deliveryFee'] as num?)?.toDouble(),
+      estimatedMinutes: json['estimatedMinutes'] as int?,
+      zoneId: json['zoneId'] as String?,
+      message: json['message'] as String?);
 }
 
 class Order {
@@ -172,7 +202,22 @@ class CommerceRepository {
       data: {'deliveryAddressId': addressId},
       options: Options(headers: {'Idempotency-Key': const Uuid().v4()}),
     );
-    return Order.fromJson(r.data!);
+    final order = Order.fromJson(r.data!);
+    // The backend changes the active cart to CHECKED_OUT. Keep the offline
+    // fallback in sync so a later CART_NOT_FOUND cannot restore old items.
+    await OfflineCache.write('cart:last', {
+      'items': <Object>[],
+      'total': 0,
+      'currency': order.currency,
+    });
+    return order;
+  }
+
+  Future<CoverageResult> coverage(String merchantId, String addressId) async {
+    final response = await api.dio.post<Map<String, dynamic>>(
+        '/api/v1/customer/checkout/coverage',
+        data: {'merchantId': merchantId, 'addressId': addressId});
+    return CoverageResult.fromJson(response.data!);
   }
 
   Future<void> pay(String orderId, String method) async {

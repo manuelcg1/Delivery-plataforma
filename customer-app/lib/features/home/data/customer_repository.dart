@@ -1,27 +1,7 @@
 import '../../../core/api/api_client.dart';
+import '../../address/domain/customer_address.dart';
 
-class Address {
-  const Address({
-    required this.id,
-    required this.label,
-    required this.recipientName,
-    required this.phone,
-    required this.addressLine,
-    required this.district,
-    required this.isDefault,
-  });
-  final String id, label, recipientName, phone, addressLine, district;
-  final bool isDefault;
-  factory Address.fromJson(Map<String, dynamic> j) => Address(
-        id: j['id'] as String,
-        label: j['label'] as String,
-        recipientName: j['recipientName'] as String,
-        phone: j['phone'] as String,
-        addressLine: j['addressLine'] as String,
-        district: j['district']?.toString() ?? '',
-        isDefault: (j['isDefault'] as bool?) ?? false,
-      );
-}
+typedef Address = CustomerAddress;
 
 Map<String, dynamic> addressRequestData({
   required String label,
@@ -30,14 +10,20 @@ Map<String, dynamic> addressRequestData({
   required String addressLine,
   required String district,
   required bool isDefault,
+  double? latitude,
+  double? longitude,
 }) =>
     <String, dynamic>{
       'label': label.trim(),
       'recipientName': recipientName.trim(),
       'phone': phone.trim(),
+      'formattedAddress': addressLine.trim(),
       'addressLine': addressLine.trim(),
       'district': district.trim(),
       'countryCode': 'PE',
+      'latitude': latitude,
+      'longitude': longitude,
+      'locationSource': 'MAP',
       'isDefault': isDefault,
     };
 
@@ -112,7 +98,7 @@ class CustomerRepository {
   Future<List<Address>> addresses() async {
     final r = await api.dio.get<List<dynamic>>('/api/v1/customer/addresses');
     return r.data!
-        .map((e) => Address.fromJson(e as Map<String, dynamic>))
+        .map((e) => CustomerAddress.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
@@ -121,7 +107,7 @@ class CustomerRepository {
       '/api/v1/customer/addresses',
       data: data,
     );
-    return Address.fromJson(r.data!);
+    return CustomerAddress.fromJson(r.data!);
   }
 
   Future<Address> updateAddress(String id, Map<String, dynamic> data) async {
@@ -129,17 +115,17 @@ class CustomerRepository {
       '/api/v1/customer/addresses/$id',
       data: data,
     );
-    return Address.fromJson(response.data!);
+    return CustomerAddress.fromJson(response.data!);
   }
 
   Future<void> deleteAddress(String id) =>
       api.dio.delete<void>('/api/v1/customer/addresses/$id');
 
   Future<Address> makeDefaultAddress(String id) async {
-    final response = await api.dio.put<Map<String, dynamic>>(
+    final response = await api.dio.patch<Map<String, dynamic>>(
       '/api/v1/customer/addresses/$id/default',
     );
-    return Address.fromJson(response.data!);
+    return CustomerAddress.fromJson(response.data!);
   }
 
   Future<List<Merchant>> merchants([String search = '']) async {
