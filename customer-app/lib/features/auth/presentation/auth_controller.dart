@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers.dart';
 import '../data/auth_repository.dart';
 import '../../courier/tracking/presentation/courier_tracking_controller.dart';
+import '../../courier/notifications/courier_notification_service.dart';
 
 final authRepositoryProvider = Provider(
   (ref) => AuthRepository(
@@ -56,6 +57,10 @@ class AuthController extends AsyncNotifier<SessionUser?> {
 
   Future<void> logout() async {
     await ref.read(courierTrackingControllerProvider.notifier).stopTracking();
+    if (state.value?.isCourier == true) {
+      await CourierNotificationService.unregisterCurrent(
+          ref.read(apiClientProvider));
+    }
     await _repository.logout();
     state = const AsyncData(null);
   }

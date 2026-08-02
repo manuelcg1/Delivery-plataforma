@@ -20,4 +20,10 @@ customer-app/build/
 customer-app/.flutter-plugins-dependencies
 customer-app/android/key.properties
 customer-app/android/*.jks
+customer-app/android/app/google-services.json
+customer-app/ios/Runner/GoogleService-Info.plist
+*firebase-service-account*.json
+*service-account*.json
+docker-compose.override.yml
+.local/
 backups/

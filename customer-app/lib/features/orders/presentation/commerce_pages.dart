@@ -21,6 +21,9 @@ final ordersProvider = FutureProvider(
   (ref) => ref.watch(commerceRepositoryProvider).orders(),
 );
 
+bool shouldPollOrderDetail(String status) =>
+    !terminalDeliveryStatuses.contains(status);
+
 class ProductPage extends ConsumerStatefulWidget {
   const ProductPage({super.key, required this.merchant, required this.product});
   final Merchant merchant;
@@ -474,7 +477,8 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
   @override
   void initState() {
     super.initState();
-    tracking = ref.read(commerceRepositoryProvider).tracking(widget.order.id);
+    tracking = _loadTracking();
+    if (!shouldPollOrderDetail(widget.order.status)) return;
     Future.microtask(() {
       customerSubscription =
           ref.read(customerRealtimeClientProvider).events.listen((event) {
@@ -487,17 +491,40 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
   }
 
   void refresh([String? status]) {
+    if (!mounted) return;
     ref.invalidate(ordersProvider);
+    if (status != null && !shouldPollOrderDetail(status)) {
+      _stopUpdates();
+      setState(() => realtimeStatus = status);
+      return;
+    }
     setState(() {
       realtimeStatus = status ?? realtimeStatus;
-      tracking = ref.read(commerceRepositoryProvider).tracking(widget.order.id);
+      tracking = _loadTracking();
     });
+  }
+
+  Future<Map<String, dynamic>> _loadTracking() async {
+    final result =
+        await ref.read(commerceRepositoryProvider).tracking(widget.order.id);
+    final status =
+        result['deliveryStatus']?.toString() ?? result['status']?.toString();
+    if (status != null && !shouldPollOrderDetail(status)) {
+      _stopUpdates();
+    }
+    return result;
+  }
+
+  void _stopUpdates() {
+    fallbackRefresh?.cancel();
+    fallbackRefresh = null;
+    customerSubscription?.cancel();
+    customerSubscription = null;
   }
 
   @override
   void dispose() {
-    customerSubscription?.cancel();
-    fallbackRefresh?.cancel();
+    _stopUpdates();
     super.dispose();
   }
 
@@ -532,7 +559,8 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                           : Text(snapshot.hasError
                               ? 'El tracking estará disponible cuando exista una entrega.'
                               : 'Seguimiento actualizado. Repartidor: ${snapshot.data?['courierName'] ?? 'por asignar'}'))),
-              if (deliveryId != null)
+              if (deliveryId != null &&
+                  !terminalDeliveryStatuses.contains(currentStatus))
                 RealtimeStatusBanner(
                   deliveryId: deliveryId,
                   onOrderUpdated: (status) => refresh(status),
@@ -611,7 +639,10 @@ class _RealtimeStatusBannerState extends ConsumerState<RealtimeStatusBanner> {
       subscription = client.events.listen((event) {
         if (mounted) {
           setState(() => status = _label(event.type, event.payload));
-          widget.onOrderUpdated(event.payload['status']?.toString());
+          final nextStatus = event.payload['status']?.toString();
+          if (nextStatus != null || event.type == 'DeliveryStatusChanged') {
+            widget.onOrderUpdated(nextStatus);
+          }
         }
       });
       await client.connect(

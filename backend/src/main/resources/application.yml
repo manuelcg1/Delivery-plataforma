@@ -78,3 +78,7 @@ tracking:
   maximum-speed-kph: ${TRACKING_MAXIMUM_SPEED_KPH:180}
   customer:
     stale-threshold: ${TRACKING_CUSTOMER_STALE_THRESHOLD:PT60S}
+notifications:
+  firebase-enabled: ${FIREBASE_ENABLED:false}
+  firebase-project-id: ${FIREBASE_PROJECT_ID:cerka-delivery}
+  firebase-service-account-base64: ${FIREBASE_SERVICE_ACCOUNT_BASE64:}

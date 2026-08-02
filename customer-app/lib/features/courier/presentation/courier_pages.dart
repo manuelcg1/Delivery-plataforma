@@ -6,6 +6,7 @@ import '../../../core/providers.dart';
 import '../../../core/realtime/realtime_client.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../data/courier_repository.dart';
+import '../notifications/courier_notification_service.dart';
 import '../tracking/domain/tracking_policy.dart';
 import '../tracking/presentation/courier_tracking_controller.dart';
 
@@ -24,6 +25,7 @@ class _CourierShellState extends ConsumerState<CourierShell> {
   int index = 0;
   int revision = 0;
   StreamSubscription<RealtimeEvent>? realtimeSubscription;
+  CourierNotificationService? notificationService;
 
   @override
   void initState() {
@@ -32,17 +34,18 @@ class _CourierShellState extends ConsumerState<CourierShell> {
       final user = ref.read(authControllerProvider).value;
       if (user == null) return;
       final realtime = ref.read(realtimeClientProvider);
+      notificationService = CourierNotificationService(
+        ref.read(apiClientProvider), ref.read(courierRepositoryProvider),
+        onOpenDelivery: (id) async {
+          final delivery=await ref.read(courierRepositoryProvider).delivery(id);
+          if(mounted) await Navigator.of(context).push<void>(MaterialPageRoute(
+            builder:(_)=>CourierDeliveryPage(delivery:delivery)));
+        });
+      await notificationService!.initialize();
       realtimeSubscription = realtime.events.listen((event) {
         if (!mounted) return;
         setState(() => revision++);
-        if (const {'COURIER_ASSIGNMENT_PENDING', 'CourierAssigned'}
-            .contains(event.type)) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            behavior: SnackBarBehavior.floating,
-            content: Text(event.payload['title']?.toString() ??
-                'Tienes una nueva entrega asignada'),
-          ));
-        }
+        notificationService?.receiveRealtime(event);
       });
       await realtime.connectAudience(
         tenantId: user.tenantId,
@@ -54,6 +57,7 @@ class _CourierShellState extends ConsumerState<CourierShell> {
   @override
   void dispose() {
     realtimeSubscription?.cancel();
+    notificationService?.dispose();
     ref.read(realtimeClientProvider).disconnect();
     super.dispose();
   }
@@ -378,6 +382,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
       delivery = await ref
           .read(courierRepositoryProvider)
           .updateDelivery(delivery.id, status);
+      await CourierNotificationService.cancelLocal(delivery.id);
       refreshHistory();
       if (mounted && status == 'REJECTED') Navigator.pop(context);
     } catch (error) {
@@ -455,10 +460,17 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
             ),
           if (delivery.status == 'ASSIGNED') ...[
             const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: busy ? null : () => respond('ACCEPTED'),
-              icon: const Icon(Icons.check_circle_outline),
-              label: Text(busy ? 'Procesando…' : 'Aceptar entrega'),
+            Row(
+              children: [
+                Expanded(child: OutlinedButton.icon(
+                  onPressed: busy ? null : () => respond('REJECTED'),
+                  icon: const Icon(Icons.close), label: const Text('Rechazar'))),
+                const SizedBox(width: 12),
+                Expanded(child: FilledButton.icon(
+                  onPressed: busy ? null : () => respond('ACCEPTED'),
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: Text(busy ? 'Procesando…' : 'Aceptar'))),
+              ],
             ),
           ] else if (next != null) ...[
             const SizedBox(height: 24),

@@ -5,22 +5,27 @@ import com.delivery.platform.common.PageResponse;
 import com.delivery.platform.delivery.application.CourierAssignmentStrategy;
 import com.delivery.platform.identity.security.IdentityPrincipal;
 import com.delivery.platform.tracking.realtime.RealtimeGateway;
+import com.delivery.platform.tracking.application.CourierNotificationService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class MerchantCourierAssignmentService {
     public static final String NOT_ACCEPTED = "Pedido no aceptado por el repartidor.";
+    private static final Logger log = LoggerFactory.getLogger(MerchantCourierAssignmentService.class);
 
     public record AvailableCourier(UUID id,String code,String name,String vehicleType,String partialPlate,
                                    String status,BigDecimal distanceKm,int activeOrders,Instant lastConnection) {}
@@ -33,12 +38,13 @@ public class MerchantCourierAssignmentService {
     private final CourierAssignmentStrategy assignmentStrategy;
     private final MerchantPortalService portal;
     private final RealtimeGateway realtime;
+    private final CourierNotificationService courierNotifications;
     private final int timeoutSeconds;
 
     public MerchantCourierAssignmentService(JdbcClient db,CourierAssignmentStrategy assignmentStrategy,
-            MerchantPortalService portal,RealtimeGateway realtime,
+            MerchantPortalService portal,RealtimeGateway realtime,CourierNotificationService courierNotifications,
             @Value("${merchant.courier-assignment-timeout-seconds:300}") int timeoutSeconds) {
-        this.db=db;this.assignmentStrategy=assignmentStrategy;this.portal=portal;this.realtime=realtime;
+        this.db=db;this.assignmentStrategy=assignmentStrategy;this.portal=portal;this.realtime=realtime;this.courierNotifications=courierNotifications;
         this.timeoutSeconds=Math.max(10,timeoutSeconds);
     }
 
@@ -82,15 +88,26 @@ public class MerchantCourierAssignmentService {
     @Transactional public AssignmentInfo autoAssign(IdentityPrincipal p,UUID orderId) {
         var s=scope(p,orderId);UUID courier=assignmentStrategy.select(p.tenantId(),s.branchId(),null)
             .orElseThrow(()->new ApiException(HttpStatus.CONFLICT,"COURIER_NOT_AVAILABLE","No se encontraron repartidores disponibles."));
-        return assign(p,s,courier,"AUTOMATIC");
+        return assign(p,s,courier,"AUTOMATIC",UUID.randomUUID().toString(),true);
     }
 
     @Transactional public AssignmentInfo manualAssign(IdentityPrincipal p,UUID orderId,UUID courier) {
-        return assign(p,scope(p,orderId),courier,"MANUAL");
+        return assign(p,scope(p,orderId),courier,"MANUAL",UUID.randomUUID().toString(),true);
     }
 
-    private AssignmentInfo assign(IdentityPrincipal p,Scope s,UUID courier,String type) {
-        if(!isAssignableOrderStatus(s.orderStatus()))
+    /** Compatibility entry point for the existing delivery assignment REST API. */
+    @Transactional public void assignDelivery(IdentityPrincipal p,UUID deliveryId,UUID courier,String type,String idempotencyKey) {
+        if(idempotencyKey==null||idempotencyKey.isBlank())
+            throw new ApiException(HttpStatus.BAD_REQUEST,"IDEMPOTENCY_KEY_REQUIRED","Envía Idempotency-Key");
+        Scope s=scopeByDelivery(p,deliveryId);
+        if(s.courierId()!=null)return;
+        if(courier==null) courier=assignmentStrategy.select(p.tenantId(),s.branchId(),null)
+            .orElseThrow(()->conflict("COURIER_NOT_AVAILABLE","No hay repartidores disponibles"));
+        assign(p,s,courier,type,idempotencyKey,false);
+    }
+
+    private AssignmentInfo assign(IdentityPrincipal p,Scope s,UUID courier,String type,String idempotencyKey,boolean requireReady) {
+        if(requireReady&&!isAssignableOrderStatus(s.orderStatus()))
             throw conflict("ORDER_NOT_ASSIGNABLE","El pedido no está listo para asignar.");
         int active=db.sql("select count(*) from delivery_assignments where tenant_id=:tenant and delivery_id=:delivery and status='PENDING'")
             .param("tenant",p.tenantId()).param("delivery",s.deliveryId()).query(Integer.class).single();
@@ -108,7 +125,7 @@ public class MerchantCourierAssignmentService {
             values(:id,:tenant,:delivery,:courier,'PENDING',:type,:user,:key,
               now()+make_interval(secs=>:timeout),:previous,'Pedido enviado al repartidor. Esperando aceptación.')
             """).param("id",assignmentId).param("tenant",p.tenantId()).param("delivery",s.deliveryId())
-            .param("courier",courier).param("type",type).param("user",p.userId()).param("key",UUID.randomUUID().toString())
+            .param("courier",courier).param("type",type).param("user",p.userId()).param("key",idempotencyKey)
             .param("timeout",timeoutSeconds).param("previous",s.orderStatus()).update();
         db.sql("update deliveries set courier_id=:courier,status='ASSIGNED',assigned_at=now(),version=version+1,updated_at=now() where id=:delivery and tenant_id=:tenant")
             .param("courier",courier).param("delivery",s.deliveryId()).param("tenant",p.tenantId()).update();
@@ -117,10 +134,10 @@ public class MerchantCourierAssignmentService {
             .param("correlation",assignmentId.toString()).update();
         db.sql("update courier_profiles set current_active_deliveries=current_active_deliveries+1 where id=:courier and tenant_id=:tenant")
             .param("courier",courier).param("tenant",p.tenantId()).update();
-        db.sql("insert into notifications(tenant_id,user_id,delivery_id,event_type,title,body,status,sent_at) values(:tenant,:user,:delivery,'COURIER_ASSIGNMENT_PENDING','Nueva entrega asignada','Tienes una nueva entrega pendiente de aceptación','SENT',now())")
-            .param("tenant",p.tenantId()).param("user",courierUser).param("delivery",s.deliveryId()).update();
-        realtime.tenant(p.tenantId(),"courier/"+courierUser,"COURIER_ASSIGNMENT_PENDING",
-            Map.of("orderId",s.orderId(),"deliveryId",s.deliveryId(),"title","Nueva entrega asignada"));
+        Map<String,Object> assignmentPayload=assignmentPayload(p.tenantId(),s.orderId(),s.deliveryId(),assignmentId);
+        log.info("Courier assigned tenant={} order={} delivery={} courier={} assignment={}",p.tenantId(),s.orderId(),s.deliveryId(),courier,assignmentId);
+        log.info("Publishing NEW_DELIVERY_ASSIGNMENT tenant={} delivery={} assignment={}",p.tenantId(),s.deliveryId(),assignmentId);
+        courierNotifications.assignment(p.tenantId(),courierUser,assignmentPayload);
         realtime.tenant(p.tenantId(),"customers","ORDER_UPDATED",
             Map.of("orderId",s.orderId(),"deliveryId",s.deliveryId(),"status","ASSIGNED"));
         realtime.delivery(p.tenantId(),s.deliveryId(),"CourierAssigned",
@@ -197,12 +214,38 @@ public class MerchantCourierAssignmentService {
         return s;
     }
     private Scope findScope(IdentityPrincipal p,UUID orderId){return db.sql("""
-        select o.id,o.merchant_id,o.branch_id,o.status,d.id delivery_id from orders o
-        left join lateral(select id from deliveries where tenant_id=o.tenant_id and order_id=o.id
+        select o.id,o.merchant_id,o.branch_id,o.status,d.id delivery_id,d.courier_id from orders o
+        left join lateral(select id,courier_id from deliveries where tenant_id=o.tenant_id and order_id=o.id
           and status not in('DELIVERED','FAILED','CANCELLED') order by created_at desc limit 1)d on true
         where o.id=:order and o.tenant_id=:tenant
-        """).param("order",orderId).param("tenant",p.tenantId()).query((r,n)->new Scope(r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getObject(3,UUID.class),r.getString(4),r.getObject(5,UUID.class))).optional().orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND,"ORDER_NOT_FOUND","Pedido no encontrado."));}
-    private record Scope(UUID orderId,UUID merchantId,UUID branchId,String orderStatus,UUID deliveryId) {}
+        """).param("order",orderId).param("tenant",p.tenantId()).query((r,n)->new Scope(r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getObject(3,UUID.class),r.getString(4),r.getObject(5,UUID.class),r.getObject(6,UUID.class))).optional().orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND,"ORDER_NOT_FOUND","Pedido no encontrado."));}
+    private Scope scopeByDelivery(IdentityPrincipal p,UUID deliveryId){return db.sql("""
+        select o.id,o.merchant_id,o.branch_id,o.status,d.id,d.courier_id
+        from deliveries d join orders o on o.id=d.order_id and o.tenant_id=d.tenant_id
+        where d.id=:delivery and d.tenant_id=:tenant
+        """).param("delivery",deliveryId).param("tenant",p.tenantId()).query((r,n)->new Scope(
+          r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getObject(3,UUID.class),r.getString(4),
+          r.getObject(5,UUID.class),r.getObject(6,UUID.class))).optional().orElseThrow(()->
+            new ApiException(HttpStatus.NOT_FOUND,"DELIVERY_NOT_FOUND","Entrega no encontrada"));}
+    private Map<String,Object> assignmentPayload(UUID tenant,UUID order,UUID delivery,UUID assignment){
+        return db.sql("""
+          select m.name merchant_name,coalesce(u.first_name||' '||u.last_name,'Cliente') customer_name,
+            coalesce(d.distance_km,0) distance_km,coalesce(d.estimated_duration_minutes,0) eta,
+            o.total,o.currency,a.expires_at
+          from deliveries d join orders o on o.id=d.order_id and o.tenant_id=d.tenant_id
+          join merchants m on m.id=d.merchant_id and m.tenant_id=d.tenant_id
+          left join users u on u.id=d.customer_id
+          join delivery_assignments a on a.id=:assignment and a.tenant_id=d.tenant_id
+          where d.id=:delivery and d.tenant_id=:tenant
+          """).param("assignment",assignment).param("delivery",delivery).param("tenant",tenant).query((r,n)->{
+            Map<String,Object> value=new HashMap<>();value.put("orderId",order);value.put("deliveryId",delivery);
+            value.put("assignmentId",assignment);
+            value.put("merchantName",r.getString("merchant_name"));value.put("customerName",r.getString("customer_name"));
+            value.put("estimatedDistanceKm",r.getBigDecimal("distance_km"));value.put("estimatedTimeMinutes",r.getInt("eta"));
+            value.put("total",r.getString("currency")+" "+r.getBigDecimal("total"));value.put("expiresAt",r.getTimestamp("expires_at").toInstant());return value;
+          }).single();
+    }
+    private record Scope(UUID orderId,UUID merchantId,UUID branchId,String orderStatus,UUID deliveryId,UUID courierId) {}
     private void audit(IdentityPrincipal p,Scope s,String action,String type,UUID courier,String oldStatus,String newStatus,String result){db.sql("insert into audit_logs(tenant_id,user_id,action,entity_type,entity_id,metadata) values(:tenant,:user,:action,'ORDER',:order,jsonb_build_object('merchantId',:merchant,'assignmentType',:type,'courierId',:courier,'oldStatus',:old,'newStatus',:new,'result',:result))").param("tenant",p.tenantId()).param("user",p.userId()).param("action",action).param("order",s.orderId()).param("merchant",s.merchantId()).param("type",type).param("courier",courier).param("old",oldStatus).param("new",newStatus).param("result",result).update();}
     private void event(UUID tenant,Scope s,String name){realtime.tenant(tenant,"merchant/"+s.merchantId(),name,Map.of("orderId",s.orderId(),"deliveryId",s.deliveryId()));}
     private ApiException conflict(String code,String message){return new ApiException(HttpStatus.CONFLICT,code,message);}

@@ -15,7 +15,7 @@ class DeliveryServiceTest {
     @Test
     void pickupDoesNotRequireDeliveryCoverage() {
         DeliveryCoverageService coverage = mock(DeliveryCoverageService.class);
-        DeliveryService service = new DeliveryService(null, coverage, null, null);
+        DeliveryService service = new DeliveryService(null, coverage, null);
 
         DeliveryCoverageService.Quote quote = service.deliveryQuote(
                 Type.PICKUP,
