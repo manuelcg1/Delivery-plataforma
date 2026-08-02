@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers.dart';
 import '../../../core/realtime/realtime_client.dart';
 import '../../../core/widgets/app_states.dart';
+import '../../../core/widgets/cart_feedback.dart';
 import '../../home/data/customer_repository.dart';
 import '../../home/presentation/home_page.dart';
 import '../../auth/presentation/auth_controller.dart';
@@ -83,20 +84,33 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                   ? null
                   : () async {
                       setState(() => busy = true);
+                      final messenger = ScaffoldMessenger.of(context);
+                      final navigator = Navigator.of(context);
+                      final repository = ref.read(commerceRepositoryProvider);
                       try {
-                        await ref.read(commerceRepositoryProvider).add(
-                              merchantId: widget.merchant.id,
-                              branchId: widget.merchant.branchId,
-                              productId: widget.product.id,
-                              quantity: quantity,
-                            );
+                        await repository.add(
+                          merchantId: widget.merchant.id,
+                          branchId: widget.merchant.branchId,
+                          productId: widget.product.id,
+                          quantity: quantity,
+                        );
                         ref.invalidate(cartProvider);
-                        if (context.mounted)
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Producto agregado al carrito'),
-                            ),
-                          );
+                        if (!context.mounted) return;
+                        showProductAddedSnackBar(
+                          messenger,
+                          productName: widget.product.name,
+                          quantity: quantity,
+                          onViewCart: () =>
+                              navigator.push(MaterialPageRoute<void>(
+                            builder: (_) => const CartPage(),
+                          )),
+                        );
+                        navigator.pop();
+                      } catch (error) {
+                        if (context.mounted) {
+                          showCartErrorSnackBar(
+                              messenger, repository.errorMessage(error));
+                        }
                       } finally {
                         if (mounted) setState(() => busy = false);
                       }
@@ -473,6 +487,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
   StreamSubscription<RealtimeEvent>? customerSubscription;
   Timer? fallbackRefresh;
   String? realtimeStatus;
+  late bool ratingSubmitted = widget.order.ratingSubmitted;
 
   @override
   void initState() {
@@ -593,20 +608,27 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                             builder: (_) => ChatPage(deliveryId: deliveryId))),
                     icon: const Icon(Icons.chat_bubble_outline),
                     label: const Text('Chatear con el repartidor')),
-              if (currentStatus == 'DELIVERED')
+              if (canRateOrder(order, currentStatus: currentStatus) &&
+                  !ratingSubmitted)
                 FilledButton.icon(
                     onPressed: () async {
                       final saved = await showDialog<bool>(
                           context: context,
                           builder: (_) => RatingDialog(orderId: order.id));
                       if (saved == true && context.mounted) {
-                        ref.read(customerMainTabProvider.notifier).state = 0;
-                        Navigator.of(context)
-                            .popUntil((route) => route.isFirst);
+                        setState(() => ratingSubmitted = true);
+                        ref.invalidate(ordersProvider);
                       }
                     },
                     icon: const Icon(Icons.star_outline),
                     label: const Text('Calificar pedido')),
+              if (currentStatus == 'DELIVERED' &&
+                  (order.ratingSubmitted || ratingSubmitted))
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.check_circle_outline),
+                  title: Text('Calificación enviada'),
+                ),
             ]);
           },
         ));

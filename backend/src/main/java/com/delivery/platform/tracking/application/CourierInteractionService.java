@@ -22,7 +22,7 @@ public class CourierInteractionService {
     public record Proof(UUID id, UUID deliveryId, String proofType, String url, String comments, Instant createdAt) {}
     public record TemporaryCode(String value, Instant expiresAt) {}
     public record Message(UUID id, UUID deliveryId, UUID senderId, String senderType, String channel, String message, Instant createdAt) {}
-    public record Notification(UUID id, UUID deliveryId, String eventType, String title, String body, String status, Instant createdAt) {}
+    public record Notification(UUID id, UUID deliveryId, String deliveryStatus, String eventType, String title, String body, String status, Instant createdAt) {}
 
     private final JdbcClient db;
     private final ProofStorage storage;
@@ -133,9 +133,9 @@ public class CourierInteractionService {
 
     public List<Notification> notifications(IdentityPrincipal principal) {
         return db.sql("""
-                select n.* from notifications n
+                select n.*,(select d.status from deliveries d where d.id=n.delivery_id and d.tenant_id=n.tenant_id) delivery_status from notifications n
                 where n.tenant_id=:t and n.user_id=:u
-                  and (n.event_type not in ('COURIER_ASSIGNED','COURIER_ASSIGNMENT_PENDING')
+                  and (n.event_type not in ('COURIER_ASSIGNED','COURIER_ASSIGNMENT_PENDING','NEW_DELIVERY_ASSIGNMENT')
                     or exists(
                       select 1 from delivery_assignments da
                       join courier_profiles cp on cp.id=da.courier_id and cp.tenant_id=da.tenant_id
@@ -151,7 +151,7 @@ public class CourierInteractionService {
                 """)
                 .param("t", principal.tenantId()).param("u", principal.userId())
                 .query((r, n) -> new Notification(r.getObject("id", UUID.class), r.getObject("delivery_id", UUID.class),
-                        r.getString("event_type"), r.getString("title"), r.getString("body"), r.getString("status"),
+                        r.getString("delivery_status"), r.getString("event_type"), r.getString("title"), r.getString("body"), r.getString("status"),
                         r.getTimestamp("created_at").toInstant())).list();
     }
 

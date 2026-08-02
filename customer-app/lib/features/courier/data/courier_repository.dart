@@ -57,9 +57,11 @@ class CourierNotification {
     required this.title,
     required this.body,
     required this.createdAt,
+    required this.deliveryStatus,
   });
 
   final String id, deliveryId, title, body, createdAt;
+  final String? deliveryStatus;
 
   factory CourierNotification.fromJson(Map<String, dynamic> json) =>
       CourierNotification(
@@ -68,8 +70,24 @@ class CourierNotification {
         title: json['title'] as String,
         body: json['body'] as String,
         createdAt: json['createdAt'] as String,
+        deliveryStatus: json['deliveryStatus'] as String?,
       );
 }
+
+const courierNoticeTerminalStatuses = <String>{
+  'DELIVERED',
+  'CANCELLED',
+  'FAILED',
+  'REJECTED',
+  'EXPIRED',
+};
+
+bool isCourierNoticeActive(String? deliveryStatus) =>
+    deliveryStatus == null ||
+    !courierNoticeTerminalStatuses.contains(deliveryStatus);
+
+bool shouldShowCourierNotice(CourierNotification notice) =>
+    isCourierNoticeActive(notice.deliveryStatus);
 
 class CourierDeliveryHistory {
   const CourierDeliveryHistory({
@@ -145,6 +163,7 @@ class CourierRepository {
     final notifications = response.data!
         .map((item) =>
             CourierNotification.fromJson(item as Map<String, dynamic>))
+        .where(shouldShowCourierNotice)
         .toList();
     final assigned =
         (await deliveries()).where((delivery) => delivery.status == 'ASSIGNED');
@@ -156,6 +175,7 @@ class CourierRepository {
         title: 'Nueva entrega asignada',
         body: 'Tienes una nueva entrega pendiente de aceptación',
         createdAt: delivery.createdAt,
+        deliveryStatus: delivery.status,
       ));
     }
     return notifications;

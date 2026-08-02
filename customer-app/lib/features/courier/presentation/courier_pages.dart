@@ -13,6 +13,7 @@ import '../tracking/presentation/courier_tracking_controller.dart';
 final courierRepositoryProvider = Provider(
   (ref) => CourierRepository(ref.watch(apiClientProvider)),
 );
+final courierDataRevisionProvider = StateProvider<int>((ref) => 0);
 
 class CourierShell extends ConsumerStatefulWidget {
   const CourierShell({super.key});
@@ -23,7 +24,6 @@ class CourierShell extends ConsumerStatefulWidget {
 
 class _CourierShellState extends ConsumerState<CourierShell> {
   int index = 0;
-  int revision = 0;
   StreamSubscription<RealtimeEvent>? realtimeSubscription;
   CourierNotificationService? notificationService;
 
@@ -35,16 +35,17 @@ class _CourierShellState extends ConsumerState<CourierShell> {
       if (user == null) return;
       final realtime = ref.read(realtimeClientProvider);
       notificationService = CourierNotificationService(
-        ref.read(apiClientProvider), ref.read(courierRepositoryProvider),
-        onOpenDelivery: (id) async {
-          final delivery=await ref.read(courierRepositoryProvider).delivery(id);
-          if(mounted) await Navigator.of(context).push<void>(MaterialPageRoute(
-            builder:(_)=>CourierDeliveryPage(delivery:delivery)));
-        });
+          ref.read(apiClientProvider), ref.read(courierRepositoryProvider),
+          onOpenDelivery: (id) async {
+        final delivery = await ref.read(courierRepositoryProvider).delivery(id);
+        if (mounted)
+          await Navigator.of(context).push<void>(MaterialPageRoute(
+              builder: (_) => CourierDeliveryPage(delivery: delivery)));
+      });
       await notificationService!.initialize();
       realtimeSubscription = realtime.events.listen((event) {
         if (!mounted) return;
-        setState(() => revision++);
+        ref.read(courierDataRevisionProvider.notifier).state++;
         notificationService?.receiveRealtime(event);
       });
       await realtime.connectAudience(
@@ -64,6 +65,7 @@ class _CourierShellState extends ConsumerState<CourierShell> {
 
   @override
   Widget build(BuildContext context) {
+    final revision = ref.watch(courierDataRevisionProvider);
     final pages = [
       CourierDeliveriesPage(key: ValueKey('deliveries-$revision')),
       CourierNotificationsPage(key: ValueKey('notifications-$revision')),
@@ -353,6 +355,10 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
       delivery = await ref
           .read(courierRepositoryProvider)
           .updateDelivery(delivery.id, next);
+      if (!isCourierNoticeActive(delivery.status)) {
+        await CourierNotificationService.cancelLocal(delivery.id);
+        ref.read(courierDataRevisionProvider.notifier).state++;
+      }
       await tracking.synchronizeDelivery(delivery);
       refreshHistory();
       if (next == 'DELIVERED' && mounted) {
@@ -383,6 +389,9 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
           .read(courierRepositoryProvider)
           .updateDelivery(delivery.id, status);
       await CourierNotificationService.cancelLocal(delivery.id);
+      if (!isCourierNoticeActive(delivery.status)) {
+        ref.read(courierDataRevisionProvider.notifier).state++;
+      }
       refreshHistory();
       if (mounted && status == 'REJECTED') Navigator.pop(context);
     } catch (error) {
@@ -462,14 +471,17 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
             const SizedBox(height: 24),
             Row(
               children: [
-                Expanded(child: OutlinedButton.icon(
-                  onPressed: busy ? null : () => respond('REJECTED'),
-                  icon: const Icon(Icons.close), label: const Text('Rechazar'))),
+                Expanded(
+                    child: OutlinedButton.icon(
+                        onPressed: busy ? null : () => respond('REJECTED'),
+                        icon: const Icon(Icons.close),
+                        label: const Text('Rechazar'))),
                 const SizedBox(width: 12),
-                Expanded(child: FilledButton.icon(
-                  onPressed: busy ? null : () => respond('ACCEPTED'),
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: Text(busy ? 'Procesando…' : 'Aceptar'))),
+                Expanded(
+                    child: FilledButton.icon(
+                        onPressed: busy ? null : () => respond('ACCEPTED'),
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: Text(busy ? 'Procesando…' : 'Aceptar'))),
               ],
             ),
           ] else if (next != null) ...[

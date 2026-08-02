@@ -52,9 +52,11 @@ class Order {
     required this.total,
     required this.currency,
     required this.createdAt,
+    required this.ratingSubmitted,
   });
   final String id, number, status, currency, createdAt;
   final double total;
+  final bool ratingSubmitted;
   factory Order.fromJson(Map<String, dynamic> j) => Order(
         id: j['id'] as String,
         number: j['orderNumber'] as String,
@@ -62,8 +64,12 @@ class Order {
         total: (j['total'] as num).toDouble(),
         currency: j['currency'] as String,
         createdAt: j['createdAt'] as String,
+        ratingSubmitted: j['ratingSubmitted'] as bool? ?? false,
       );
 }
+
+bool canRateOrder(Order order, {String? currentStatus}) =>
+    (currentStatus ?? order.status) == 'DELIVERED' && !order.ratingSubmitted;
 
 class ChatMessage {
   const ChatMessage(
@@ -216,9 +222,20 @@ class CommerceRepository {
         .toList();
   }
 
-  Future<void> rate(String orderId, int score, String comment) =>
-      api.dio.post<void>('/api/v1/customer/orders/$orderId/rating',
-          data: {'score': score, 'comment': comment});
+  Future<void> rate(String orderId, int score, String comment) async {
+    await api.dio.post<void>('/api/v1/customer/orders/$orderId/rating',
+        data: {'score': score, 'comment': comment});
+    final cached = await OfflineCache.read('orders:last');
+    if (cached is List<dynamic>) {
+      final updated = cached.map((item) {
+        final order = Map<String, dynamic>.from(item as Map);
+        if (order['id'] == orderId) order['ratingSubmitted'] = true;
+        return order;
+      }).toList();
+      await OfflineCache.write('orders:last', updated);
+    }
+  }
+
   Future<List<ChatMessage>> messages(String deliveryId) async {
     final response = await api.dio.get<List<dynamic>>('/api/v1/chat/history',
         queryParameters: {
