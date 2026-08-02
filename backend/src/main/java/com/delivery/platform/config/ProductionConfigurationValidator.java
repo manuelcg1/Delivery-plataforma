@@ -19,10 +19,6 @@ public class ProductionConfigurationValidator {
     private final boolean googlePlacesEnabled;
     private final String googleMapsApiKey;
 
-    ProductionConfigurationValidator(String jwtSecret,String frontendUrl,String corsOrigins,String webhookSecret,String minioPublicEndpoint,String paymentProvider) {
-        this(jwtSecret,frontendUrl,corsOrigins,webhookSecret,minioPublicEndpoint,paymentProvider,false,"");
-    }
-
     public ProductionConfigurationValidator(
             @Value("${identity.jwt-secret}") String jwtSecret,
             @Value("${identity.frontend-url}") String frontendUrl,
