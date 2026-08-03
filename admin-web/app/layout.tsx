@@ -3,6 +3,7 @@ import { GeistSans } from 'geist/font/sans';
 import './styles.css';
 import './identity.css';
 import './catalog.css';
+import './branch-location.css';
 import {AuthProvider} from '@/lib/auth';
 
 export const metadata: Metadata = {

@@ -12,6 +12,7 @@ import '../data/commerce_repository.dart';
 import '../../customer_tracking/presentation/customer_order_tracking_page.dart';
 import '../../customer_tracking/presentation/customer_tracking_controller.dart';
 import '../../address/presentation/customer_address_form_page.dart';
+import '../../address/domain/customer_address.dart';
 
 final commerceRepositoryProvider = Provider(
   (ref) => CommerceRepository(ref.watch(apiClientProvider)),
@@ -27,6 +28,69 @@ bool shouldPollOrderDetail(String status) =>
     !terminalDeliveryStatuses.contains(status);
 
 const customerOrdersTabIndex = 2;
+
+class CheckoutAddressSelector extends StatelessWidget {
+  const CheckoutAddressSelector({
+    super.key,
+    required this.addresses,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<CustomerAddress> addresses;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  Widget _label(CustomerAddress address) => Text(
+        '${address.label} · ${address.addressLine}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+
+  @override
+  Widget build(BuildContext context) => DropdownButtonFormField<String>(
+        initialValue: value,
+        isExpanded: true,
+        items: addresses
+            .map((address) => DropdownMenuItem(
+                  value: address.id,
+                  child: _label(address),
+                ))
+            .toList(),
+        selectedItemBuilder: (_) => addresses
+            .map((address) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: _label(address),
+                ))
+            .toList(),
+        onChanged: onChanged,
+        decoration: const InputDecoration(labelText: 'Dirección de entrega'),
+      );
+}
+
+class CheckoutCoverageStatus extends StatelessWidget {
+  const CheckoutCoverageStatus({super.key, required this.coverage});
+  final CoverageResult coverage;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          coverage.covered ? Icons.check_circle : Icons.location_off,
+          color: coverage.covered
+              ? Colors.green
+              : Theme.of(context).colorScheme.error,
+        ),
+        title: Text(
+          coverage.message ?? coverageMessageForCode(coverage.reasonCode),
+        ),
+        subtitle: coverage.covered
+            ? Text(
+                'Entrega estimada: ${coverage.estimatedMinutes} min · S/ ${coverage.deliveryFee?.toStringAsFixed(2)}',
+              )
+            : const Text('Cambia la dirección para continuar'),
+      );
+}
 
 class ProductPage extends ConsumerStatefulWidget {
   const ProductPage({super.key, required this.merchant, required this.product});
@@ -252,6 +316,7 @@ class CheckoutPage extends ConsumerStatefulWidget {
 class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   String? address;
   String? coverageAddress;
+  String? coverageMerchant;
   CoverageResult? coverage;
   bool checkingCoverage = false;
   String method = 'CARD';
@@ -271,11 +336,12 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
         setState(() {
           coverage = result;
           coverageAddress = addressId;
+          coverageMerchant = cart.merchantId;
         });
     } catch (error) {
       if (mounted)
         setState(() => errorMessage =
-            ref.read(commerceRepositoryProvider).errorMessage(error));
+            ref.read(commerceRepositoryProvider).coverageErrorMessage(error));
     } finally {
       if (mounted) setState(() => checkingCoverage = false);
     }
@@ -284,6 +350,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   @override
   Widget build(BuildContext context) {
     final addresses = ref.watch(addressesProvider);
+    final activeMerchant = ref.watch(cartProvider).valueOrNull?.merchantId;
     return Scaffold(
       appBar: AppBar(title: const Text('Confirmar pedido')),
       body: ListView(
@@ -298,28 +365,23 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                     .id;
               }
               if (address != null &&
-                  coverageAddress != address &&
+                  (coverageAddress != address ||
+                      coverageMerchant != activeMerchant) &&
                   !checkingCoverage) {
                 WidgetsBinding.instance
                     .addPostFrameCallback((_) => _validateCoverage(address!));
               }
               final selected = items.where((e) => e.id == address).firstOrNull;
               return Column(children: [
-                DropdownButtonFormField<String>(
-                  initialValue: address,
-                  items: items
-                      .map((e) => DropdownMenuItem(
-                          value: e.id,
-                          child: Text('${e.label} · ${e.addressLine}')))
-                      .toList(),
+                CheckoutAddressSelector(
+                  addresses: items,
+                  value: address,
                   onChanged: (value) {
                     if (value != null) {
                       setState(() => address = value);
                       _validateCoverage(value);
                     }
                   },
-                  decoration:
-                      const InputDecoration(labelText: 'Dirección de entrega'),
                 ),
                 if (selected != null)
                   ListTile(
@@ -327,7 +389,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                       title: Text(selected.formattedAddress),
                       subtitle: Text(selected.reference ??
                           'Ubicación validada con coordenadas')),
-                Row(children: [
+                Wrap(spacing: 8, runSpacing: 4, children: [
                   TextButton.icon(
                       onPressed: () async {
                         await Navigator.push<void>(
@@ -336,6 +398,10 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                                 builder: (_) =>
                                     const CustomerAddressFormPage()));
                         ref.invalidate(addressesProvider);
+                        if (address != null) {
+                          coverageAddress = null;
+                          await _validateCoverage(address!);
+                        }
                       },
                       icon: const Icon(Icons.add_location_alt_outlined),
                       label: const Text('Agregar nueva')),
@@ -348,6 +414,8 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                                   builder: (_) => CustomerAddressFormPage(
                                       address: selected)));
                           ref.invalidate(addressesProvider);
+                          coverageAddress = null;
+                          await _validateCoverage(selected.id);
                         },
                         icon: const Icon(Icons.edit_outlined),
                         label: const Text('Editar')),
@@ -362,18 +430,7 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
             const ListTile(
                 leading: CircularProgressIndicator(),
                 title: Text('Validando cobertura…')),
-          if (coverage != null)
-            ListTile(
-                leading: Icon(
-                    coverage!.covered ? Icons.check_circle : Icons.location_off,
-                    color: coverage!.covered
-                        ? Colors.green
-                        : Theme.of(context).colorScheme.error),
-                title: Text(coverage!.message ?? ''),
-                subtitle: coverage!.covered
-                    ? Text(
-                        'Entrega estimada: ${coverage!.estimatedMinutes} min · S/ ${coverage!.deliveryFee?.toStringAsFixed(2)}')
-                    : const Text('Cambia la dirección para continuar')),
+          if (coverage != null) CheckoutCoverageStatus(coverage: coverage!),
           DropdownButtonFormField(
             initialValue: method,
             items: checkoutPaymentMethods.entries

@@ -61,18 +61,34 @@ class CoverageResult {
       this.deliveryFee,
       this.estimatedMinutes,
       this.zoneId,
+      this.reasonCode,
       this.message});
   final bool covered;
   final double? deliveryFee;
   final int? estimatedMinutes;
-  final String? zoneId, message;
+  final String? zoneId, reasonCode, message;
   factory CoverageResult.fromJson(Map<String, dynamic> json) => CoverageResult(
       covered: json['covered'] as bool,
       deliveryFee: (json['deliveryFee'] as num?)?.toDouble(),
       estimatedMinutes: json['estimatedMinutes'] as int?,
       zoneId: json['zoneId'] as String?,
+      reasonCode: json['reasonCode'] as String?,
       message: json['message'] as String?);
 }
+
+String coverageMessageForCode(String? code) => switch (code) {
+      'COVERAGE_NOT_CONFIGURED' =>
+        'Esta sucursal todavía no tiene una zona de reparto configurada.',
+      'BRANCH_LOCATION_MISSING' =>
+        'Esta sucursal todavía no tiene una ubicación configurada.',
+      'ADDRESS_COORDINATES_MISSING' ||
+      'ADDRESS_NOT_RESOLVED' =>
+        'No pudimos validar esta dirección. Edítala o selecciona otra.',
+      'OUTSIDE_COVERAGE' ||
+      'DELIVERY_OUT_OF_COVERAGE' =>
+        'Este comercio todavía no realiza entregas en esta ubicación.',
+      _ => 'No pudimos verificar la cobertura. Intenta nuevamente.',
+    };
 
 class Order {
   const Order({
@@ -151,6 +167,8 @@ class CommerceRepository {
   CommerceRepository(this.api);
   final ApiClient api;
   String errorMessage(Object error) => api.exception(error).message;
+  String coverageErrorMessage(Object error) =>
+      coverageMessageForCode(api.exception(error).code);
   Future<Cart> cart() async {
     try {
       final r = await api.dio.get<Map<String, dynamic>>('/api/v1/cart');
