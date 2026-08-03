@@ -78,6 +78,12 @@ tracking:
   maximum-speed-kph: ${TRACKING_MAXIMUM_SPEED_KPH:180}
   customer:
     stale-threshold: ${TRACKING_CUSTOMER_STALE_THRESHOLD:PT60S}
+delivery:
+  eta:
+    assignment-minutes: ${DELIVERY_ETA_ASSIGNMENT_MINUTES:5}
+    courier-to-merchant-minutes: ${DELIVERY_ETA_COURIER_TO_MERCHANT_MINUTES:10}
+    average-speed-kph: ${DELIVERY_ETA_AVERAGE_SPEED_KPH:25}
+    uncertainty-minutes: ${DELIVERY_ETA_UNCERTAINTY_MINUTES:5}
 notifications:
   firebase-enabled: ${FIREBASE_ENABLED:false}
   firebase-project-id: ${FIREBASE_PROJECT_ID:cerka-delivery}

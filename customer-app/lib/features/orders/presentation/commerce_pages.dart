@@ -35,60 +35,380 @@ class CheckoutAddressSelector extends StatelessWidget {
     required this.addresses,
     required this.value,
     required this.onChanged,
+    this.onAdd,
+    this.onEdit,
   });
 
   final List<CustomerAddress> addresses;
   final String? value;
   final ValueChanged<String?> onChanged;
-
-  Widget _label(CustomerAddress address) => Text(
-        '${address.label} · ${address.addressLine}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      );
+  final VoidCallback? onAdd;
+  final ValueChanged<CustomerAddress>? onEdit;
 
   @override
-  Widget build(BuildContext context) => DropdownButtonFormField<String>(
-        initialValue: value,
-        isExpanded: true,
-        items: addresses
-            .map((address) => DropdownMenuItem(
-                  value: address.id,
-                  child: _label(address),
-                ))
-            .toList(),
-        selectedItemBuilder: (_) => addresses
-            .map((address) => Align(
-                  alignment: Alignment.centerLeft,
-                  child: _label(address),
-                ))
-            .toList(),
-        onChanged: onChanged,
-        decoration: const InputDecoration(labelText: 'Dirección de entrega'),
-      );
+  Widget build(BuildContext context) {
+    final selected = addresses.where((item) => item.id == value).firstOrNull;
+    return Semantics(
+      button: true,
+      label: selected == null
+          ? 'Seleccionar dirección de entrega'
+          : 'Dirección de entrega, ${selected.label}, ${selected.addressLine}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _showAddressSelector(context),
+        child: _CheckoutCard(
+          child: selected == null
+              ? const _EmptyCheckoutChoice(
+                  icon: Icons.add_location_alt_outlined,
+                  title: 'Seleccionar dirección',
+                )
+              : Row(
+                  children: [
+                    const _CheckoutIcon(icon: Icons.home_rounded),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selected.isDefault
+                                ? '${selected.label} · Predeterminada'
+                                : selected.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _navy,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            selected.addressLine,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _primaryText,
+                              fontSize: 14,
+                              height: 1.3,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          const Row(
+                            children: [
+                              Icon(Icons.check_circle,
+                                  size: 16, color: _success),
+                              SizedBox(width: 5),
+                              Expanded(
+                                child: Text(
+                                  'Ubicación validada',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      TextStyle(color: _success, fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.chevron_right_rounded, color: _orange),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAddressSelector(BuildContext context) async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => _AddressPickerSheet(
+        addresses: addresses,
+        selectedId: value,
+        onAdd: onAdd,
+        onEdit: onEdit,
+      ),
+    );
+    if (result != null) onChanged(result);
+  }
 }
 
 class CheckoutCoverageStatus extends StatelessWidget {
-  const CheckoutCoverageStatus({super.key, required this.coverage});
+  const CheckoutCoverageStatus({
+    super.key,
+    required this.coverage,
+    this.onChangeAddress,
+  });
   final CoverageResult coverage;
+  final VoidCallback? onChangeAddress;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(
-          coverage.covered ? Icons.check_circle : Icons.location_off,
+  Widget build(BuildContext context) => AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
           color: coverage.covered
-              ? Colors.green
-              : Theme.of(context).colorScheme.error,
+              ? const Color(0xFFF0FDF4)
+              : const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: coverage.covered
+                ? const Color(0xFFBBF7D0)
+                : const Color(0xFFFED7AA),
+          ),
         ),
-        title: Text(
-          coverage.message ?? coverageMessageForCode(coverage.reasonCode),
-        ),
-        subtitle: coverage.covered
-            ? Text(
-                'Entrega estimada: ${coverage.estimatedMinutes} min · S/ ${coverage.deliveryFee?.toStringAsFixed(2)}',
+        child: coverage.covered
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.check_circle, color: _success, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Entrega disponible',
+                            style: TextStyle(
+                                color: _success,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 16,
+                          runSpacing: 6,
+                          children: [
+                            _CoverageDetail(
+                              icon: Icons.schedule_rounded,
+                              text: coverage.minimumEstimatedMinutes != null &&
+                                      coverage.maximumEstimatedMinutes != null
+                                  ? '${coverage.minimumEstimatedMinutes}–${coverage.maximumEstimatedMinutes} min'
+                                  : coverage.estimatedMinutes == null
+                                      ? 'Tiempo por confirmar'
+                                      : '${coverage.estimatedMinutes} min',
+                            ),
+                            _CoverageDetail(
+                              icon: Icons.delivery_dining_rounded,
+                              text:
+                                  'S/ ${(coverage.deliveryFee ?? 0).toStringAsFixed(2)}',
+                            ),
+                            if (coverage.distanceKm != null)
+                              _CoverageDetail(
+                                icon: Icons.route_rounded,
+                                text:
+                                    '${coverage.distanceKm!.toStringAsFixed(1)} km',
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               )
-            : const Text('Cambia la dirección para continuar'),
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      color: Color(0xFFEA580C), size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'No entregamos todavía en esta dirección.',
+                          style: TextStyle(
+                            color: _primaryText,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (onChangeAddress != null) ...[
+                          const SizedBox(height: 6),
+                          TextButton(
+                            onPressed: onChangeAddress,
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                              padding: EdgeInsets.zero,
+                              foregroundColor: const Color(0xFFEA580C),
+                            ),
+                            child: const Text('Cambiar dirección'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      );
+}
+
+const _navy = Color(0xFF06163A);
+const _orange = Color(0xFFFF7C00);
+const _surface = Color(0xFFF5F7FA);
+const _primaryText = Color(0xFF111827);
+const _secondaryText = Color(0xFF6B7280);
+const _success = Color(0xFF16A34A);
+
+class _CheckoutCard extends StatelessWidget {
+  const _CheckoutCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A06163A),
+              blurRadius: 12,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: child,
+      );
+}
+
+class _CheckoutIcon extends StatelessWidget {
+  const _CheckoutIcon({required this.icon});
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 42,
+        height: 42,
+        decoration: const BoxDecoration(color: _navy, shape: BoxShape.circle),
+        child: Icon(icon, color: Colors.white, size: 22),
+      );
+}
+
+class _EmptyCheckoutChoice extends StatelessWidget {
+  const _EmptyCheckoutChoice({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          _CheckoutIcon(icon: icon),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(title,
+                style: const TextStyle(
+                    color: _primaryText,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500)),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: _orange),
+        ],
+      );
+}
+
+class _CoverageDetail extends StatelessWidget {
+  const _CoverageDetail({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: _navy),
+          const SizedBox(width: 5),
+          Text(text, style: const TextStyle(color: _primaryText, fontSize: 12)),
+        ],
+      );
+}
+
+class _AddressPickerSheet extends StatelessWidget {
+  const _AddressPickerSheet({
+    required this.addresses,
+    required this.selectedId,
+    this.onAdd,
+    this.onEdit,
+  });
+  final List<CustomerAddress> addresses;
+  final String? selectedId;
+  final VoidCallback? onAdd;
+  final ValueChanged<CustomerAddress>? onEdit;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Elige una dirección',
+                style: TextStyle(
+                    color: _navy, fontSize: 20, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: addresses.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = addresses[index];
+                  return ListTile(
+                    minTileHeight: 56,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      item.id == selectedId
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_off,
+                      color: item.id == selectedId ? _orange : _secondaryText,
+                    ),
+                    title: Text(item.label,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(item.addressLine,
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    onTap: () => Navigator.pop(context, item.id),
+                    trailing: onEdit == null
+                        ? null
+                        : IconButton(
+                            tooltip: 'Editar dirección',
+                            onPressed: () {
+                              Navigator.pop(context);
+                              onEdit!(item);
+                            },
+                            icon: const Icon(Icons.edit_outlined),
+                          ),
+                  );
+                },
+              ),
+            ),
+            if (onAdd != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  onAdd!();
+                },
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  foregroundColor: _navy,
+                ),
+                icon: const Icon(Icons.add_location_alt_outlined),
+                label: const Text('Agregar nueva dirección'),
+              ),
+            ],
+          ],
+        ),
       );
 }
 
@@ -307,6 +627,199 @@ class CartItemTile extends ConsumerWidget {
           ])));
 }
 
+Widget _fadeSlide(Widget child, Animation<double> animation) => FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.05),
+          end: Offset.zero,
+        ).animate(animation),
+        child: child,
+      ),
+    );
+
+String _currency(String value) => value == 'PEN' ? 'S/' : value;
+
+double _quotedTotal(Cart cart, CoverageResult? coverage) {
+  final delivery = coverage?.covered == true ? coverage?.deliveryFee ?? 0 : 0;
+  return cart.subtotal + delivery - cart.discount;
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(text,
+      style: const TextStyle(
+          color: _navy, fontSize: 16, fontWeight: FontWeight.w500));
+}
+
+class _CoverageLoading extends StatelessWidget {
+  const _CoverageLoading({super.key});
+
+  @override
+  Widget build(BuildContext context) => const _CheckoutCard(
+        child: Row(children: [
+          SizedBox.square(
+            dimension: 20,
+            child: CircularProgressIndicator(strokeWidth: 2, color: _orange),
+          ),
+          SizedBox(width: 12),
+          Text('Validando cobertura…',
+              style: TextStyle(color: _secondaryText, fontSize: 14)),
+        ]),
+      );
+}
+
+class _OrderSummary extends StatelessWidget {
+  const _OrderSummary({required this.cart, required this.coverage});
+  final Cart cart;
+  final CoverageResult? coverage;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtotal = cart.subtotal;
+    final delivery = coverage?.covered == true ? coverage?.deliveryFee ?? 0 : 0;
+    final discount = cart.discount;
+    final total = _quotedTotal(cart, coverage);
+    final currency = _currency(cart.currency);
+    return _CheckoutCard(
+      child: Column(children: [
+        _SummaryRow(
+            label: 'Subtotal (${cart.items.length} productos)',
+            value: '$currency ${subtotal.toStringAsFixed(2)}'),
+        const SizedBox(height: 12),
+        _SummaryRow(
+            label: 'Envío', value: '$currency ${delivery.toStringAsFixed(2)}'),
+        const SizedBox(height: 12),
+        _SummaryRow(
+          label: 'Descuentos',
+          value: discount == 0
+              ? '$currency 0.00'
+              : '-$currency ${discount.toStringAsFixed(2)}',
+          valueColor: _success,
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 14),
+          child: Divider(height: 1),
+        ),
+        _SummaryRow(
+          label: 'Total',
+          value: '$currency ${total.toStringAsFixed(2)}',
+          emphasized: true,
+        ),
+      ]),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.emphasized = false,
+  });
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Expanded(
+          child: Text(label,
+              style: TextStyle(
+                color: emphasized ? _primaryText : _secondaryText,
+                fontSize: emphasized ? 16 : 14,
+                fontWeight: emphasized ? FontWeight.w600 : FontWeight.normal,
+              )),
+        ),
+        const SizedBox(width: 12),
+        Text(value,
+            style: TextStyle(
+              color: valueColor ?? (emphasized ? _navy : _primaryText),
+              fontSize: emphasized ? 20 : 14,
+              fontWeight: emphasized ? FontWeight.bold : FontWeight.normal,
+            )),
+      ]);
+}
+
+class _CheckoutBottomBar extends StatelessWidget {
+  const _CheckoutBottomBar({
+    required this.cart,
+    required this.coverage,
+    required this.busy,
+    required this.enabled,
+    required this.onPressed,
+  });
+  final Cart? cart;
+  final CoverageResult? coverage;
+  final bool busy;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: const BoxDecoration(color: Colors.white, boxShadow: [
+            BoxShadow(
+                color: Color(0x1406163A),
+                blurRadius: 16,
+                offset: Offset(0, -4)),
+          ]),
+          child: Row(children: [
+            if (cart != null) ...[
+              SizedBox(
+                width: 92,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Total',
+                        style: TextStyle(color: _secondaryText, fontSize: 12)),
+                    Text(
+                      '${_currency(cart!.currency)} ${_quotedTotal(cart!, coverage).toStringAsFixed(2)}',
+                      maxLines: 1,
+                      style: const TextStyle(
+                          color: _navy,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: enabled ? onPressed : null,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  backgroundColor: _orange,
+                  disabledBackgroundColor: const Color(0xFFFFC58F),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                icon: busy
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.lock_outline_rounded, size: 19),
+                label: Text(busy ? 'Confirmando…' : 'Crear pedido y pagar'),
+              ),
+            ),
+          ]),
+        ),
+      );
+}
+
 class CheckoutPage extends ConsumerStatefulWidget {
   const CheckoutPage({super.key});
   @override
@@ -347,21 +860,165 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     }
   }
 
+  Future<void> _openAddressForm([CustomerAddress? selected]) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CustomerAddressFormPage(address: selected),
+      ),
+    );
+    ref.invalidate(addressesProvider);
+    coverageAddress = null;
+    if (selected != null) {
+      setState(() => address = selected.id);
+      await _validateCoverage(selected.id);
+    } else if (address != null) {
+      await _validateCoverage(address!);
+    }
+  }
+
+  Future<void> _submitOrder() async {
+    setState(() {
+      busy = true;
+      errorMessage = null;
+    });
+    Order? createdOrder;
+    final repository = ref.read(commerceRepositoryProvider);
+    try {
+      createdOrder =
+          await repository.checkout(address!, coverage!.deliveryFee!);
+      await repository.pay(createdOrder.id, method);
+      ref.invalidate(cartProvider);
+      ref.invalidate(ordersProvider);
+      if (mounted) {
+        ref.read(customerMainTabProvider.notifier).state =
+            customerOrdersTabIndex;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } catch (error) {
+      final message = repository.errorMessage(error);
+      if (createdOrder != null) {
+        ref.invalidate(cartProvider);
+        ref.invalidate(ordersProvider);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'El pedido fue creado, pero el pago quedó pendiente: $message',
+              ),
+            ),
+          );
+          ref.read(customerMainTabProvider.notifier).state =
+              customerOrdersTabIndex;
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      } else if (mounted) {
+        if (repository.errorCode(error) == 'DELIVERY_QUOTE_CHANGED') {
+          await _validateCoverage(address!);
+          if (mounted) {
+            setState(() => errorMessage =
+                'El costo de entrega cambió. Revisa el nuevo total.');
+          }
+        } else {
+          setState(() => errorMessage = message);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _showPaymentMethods() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Método de pago',
+                style: TextStyle(
+                    color: _navy, fontSize: 20, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            ...checkoutPaymentMethods.entries.map(
+              (entry) => ListTile(
+                minTileHeight: 56,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  entry.key == method
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  color: entry.key == method ? _orange : _secondaryText,
+                ),
+                title: Text(entry.value),
+                onTap: () => Navigator.pop(context, entry.key),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected != null && mounted) setState(() => method = selected);
+  }
+
+  Future<void> _selectAddress(List<CustomerAddress> items) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => _AddressPickerSheet(
+        addresses: items,
+        selectedId: address,
+        onAdd: _openAddressForm,
+        onEdit: _openAddressForm,
+      ),
+    );
+    if (selected != null && mounted) {
+      setState(() => address = selected);
+      await _validateCoverage(selected);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final addresses = ref.watch(addressesProvider);
-    final activeMerchant = ref.watch(cartProvider).valueOrNull?.merchantId;
+    final cart = ref.watch(cartProvider).valueOrNull;
+    final activeMerchant = cart?.merchantId;
+    final canSubmit = !busy &&
+        address != null &&
+        !checkingCoverage &&
+        coverage?.covered == true;
     return Scaffold(
-      appBar: AppBar(title: const Text('Confirmar pedido')),
+      backgroundColor: _surface,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: _navy,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        title: const Text('Confirmar pedido',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
         children: [
-          Text('Dirección', style: Theme.of(context).textTheme.titleLarge),
+          const _SectionTitle('Entregar en'),
+          const SizedBox(height: 10),
           addresses.when(
             data: (items) {
               if (address == null && items.isNotEmpty) {
                 address = items
-                    .firstWhere((e) => e.isDefault, orElse: () => items.first)
+                    .firstWhere((item) => item.isDefault,
+                        orElse: () => items.first)
                     .id;
               }
               if (address != null &&
@@ -371,11 +1028,15 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                 WidgetsBinding.instance
                     .addPostFrameCallback((_) => _validateCoverage(address!));
               }
-              final selected = items.where((e) => e.id == address).firstOrNull;
-              return Column(children: [
-                CheckoutAddressSelector(
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 260),
+                transitionBuilder: _fadeSlide,
+                child: CheckoutAddressSelector(
+                  key: ValueKey(address),
                   addresses: items,
                   value: address,
+                  onAdd: _openAddressForm,
+                  onEdit: _openAddressForm,
                   onChanged: (value) {
                     if (value != null) {
                       setState(() => address = value);
@@ -383,127 +1044,82 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
                     }
                   },
                 ),
-                if (selected != null)
-                  ListTile(
-                      leading: const Icon(Icons.location_on),
-                      title: Text(selected.formattedAddress),
-                      subtitle: Text(selected.reference ??
-                          'Ubicación validada con coordenadas')),
-                Wrap(spacing: 8, runSpacing: 4, children: [
-                  TextButton.icon(
-                      onPressed: () async {
-                        await Navigator.push<void>(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    const CustomerAddressFormPage()));
-                        ref.invalidate(addressesProvider);
-                        if (address != null) {
-                          coverageAddress = null;
-                          await _validateCoverage(address!);
-                        }
-                      },
-                      icon: const Icon(Icons.add_location_alt_outlined),
-                      label: const Text('Agregar nueva')),
-                  if (selected != null)
-                    TextButton.icon(
-                        onPressed: () async {
-                          await Navigator.push<void>(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => CustomerAddressFormPage(
-                                      address: selected)));
-                          ref.invalidate(addressesProvider);
-                          coverageAddress = null;
-                          await _validateCoverage(selected.id);
-                        },
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('Editar')),
-                ]),
-              ]);
+              );
             },
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text(e.toString()),
+            loading: () => const LinearProgressIndicator(color: _orange),
+            error: (error, _) => Text(error.toString()),
+          ),
+          const SizedBox(height: 16),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            transitionBuilder: _fadeSlide,
+            child: checkingCoverage
+                ? const _CoverageLoading(key: ValueKey('loading'))
+                : coverage == null
+                    ? const SizedBox.shrink(key: ValueKey('empty'))
+                    : CheckoutCoverageStatus(
+                        key: ValueKey(
+                            '${coverage!.covered}-${coverage!.reasonCode}'),
+                        coverage: coverage!,
+                        onChangeAddress: addresses.valueOrNull == null
+                            ? null
+                            : () => _selectAddress(addresses.valueOrNull!),
+                      ),
           ),
           const SizedBox(height: 20),
-          if (checkingCoverage)
-            const ListTile(
-                leading: CircularProgressIndicator(),
-                title: Text('Validando cobertura…')),
-          if (coverage != null) CheckoutCoverageStatus(coverage: coverage!),
-          DropdownButtonFormField(
-            initialValue: method,
-            items: checkoutPaymentMethods.entries
-                .map(
-                  (entry) => DropdownMenuItem(
-                    value: entry.key,
-                    child: Text(entry.value),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) => setState(() => method = value!),
-            decoration: const InputDecoration(labelText: 'Método de pago'),
+          const _SectionTitle('Método de pago'),
+          const SizedBox(height: 10),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 240),
+            transitionBuilder: _fadeSlide,
+            child: Semantics(
+              key: ValueKey(method),
+              button: true,
+              label: 'Método de pago, ${checkoutPaymentMethods[method]}',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: _showPaymentMethods,
+                child: _CheckoutCard(
+                  child: Row(children: [
+                    const _CheckoutIcon(icon: Icons.credit_card_rounded),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(checkoutPaymentMethods[method]!,
+                          style: const TextStyle(
+                              color: _primaryText,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    const Icon(Icons.chevron_right_rounded, color: _orange),
+                  ]),
+                ),
+              ),
+            ),
           ),
+          const SizedBox(height: 20),
+          const _SectionTitle('Resumen del pedido'),
+          const SizedBox(height: 10),
+          if (cart != null) _OrderSummary(cart: cart, coverage: coverage),
           if (errorMessage != null) ...[
             const SizedBox(height: 12),
-            Text(
-              errorMessage!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(errorMessage!,
+                  style: const TextStyle(color: Color(0xFFDC2626))),
             ),
           ],
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: busy ||
-                    address == null ||
-                    checkingCoverage ||
-                    coverage?.covered != true
-                ? null
-                : () async {
-                    setState(() {
-                      busy = true;
-                      errorMessage = null;
-                    });
-                    Order? createdOrder;
-                    final repository = ref.read(commerceRepositoryProvider);
-                    try {
-                      createdOrder = await repository.checkout(address!);
-                      await repository.pay(createdOrder.id, method);
-                      ref.invalidate(cartProvider);
-                      ref.invalidate(ordersProvider);
-                      if (context.mounted) {
-                        ref.read(customerMainTabProvider.notifier).state =
-                            customerOrdersTabIndex;
-                        Navigator.of(context)
-                            .popUntil((route) => route.isFirst);
-                      }
-                    } catch (error) {
-                      final message = repository.errorMessage(error);
-                      if (createdOrder != null) {
-                        ref.invalidate(cartProvider);
-                        ref.invalidate(ordersProvider);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'El pedido fue creado, pero el pago quedó pendiente: $message',
-                              ),
-                            ),
-                          );
-                          ref.read(customerMainTabProvider.notifier).state =
-                              customerOrdersTabIndex;
-                          Navigator.of(context)
-                              .popUntil((route) => route.isFirst);
-                        }
-                      } else if (mounted) {
-                        setState(() => errorMessage = message);
-                      }
-                    } finally {
-                      if (mounted) setState(() => busy = false);
-                    }
-                  },
-            child: Text(busy ? 'Confirmando…' : 'Crear pedido y pagar'),
-          ),
         ],
+      ),
+      bottomNavigationBar: _CheckoutBottomBar(
+        cart: cart,
+        coverage: coverage,
+        busy: busy,
+        enabled: canSubmit,
+        onPressed: _submitOrder,
       ),
     );
   }

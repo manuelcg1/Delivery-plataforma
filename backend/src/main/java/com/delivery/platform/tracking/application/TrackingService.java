@@ -1,6 +1,7 @@
 package com.delivery.platform.tracking.application;
 
 import com.delivery.platform.common.ApiException;
+import com.delivery.platform.delivery.application.DeliveryEtaService;
 import com.delivery.platform.identity.security.IdentityPrincipal;
 import com.delivery.platform.tracking.realtime.RealtimeGateway;
 import com.delivery.platform.tracking.realtime.CourierTrackingEventPublisher;
@@ -42,17 +43,20 @@ public class TrackingService {
     private final StringRedisTemplate redis;
     private final RealtimeGateway realtime;
     private final CourierTrackingEventPublisher trackingEvents;
+    private final DeliveryEtaService etaService;
     private final BigDecimal maximumAccuracy;
     private final BigDecimal maximumSpeedKph;
 
     public TrackingService(JdbcClient db, StringRedisTemplate redis, RealtimeGateway realtime,
                            CourierTrackingEventPublisher trackingEvents,
+                           DeliveryEtaService etaService,
                            @Value("${tracking.maximum-accuracy-meters:100}") BigDecimal maximumAccuracy,
                            @Value("${tracking.maximum-speed-kph:180}") BigDecimal maximumSpeedKph) {
         this.db = db;
         this.redis = redis;
         this.realtime = realtime;
         this.trackingEvents = trackingEvents;
+        this.etaService = etaService;
         this.maximumAccuracy = maximumAccuracy;
         this.maximumSpeedKph = maximumSpeedKph;
     }
@@ -178,7 +182,7 @@ public class TrackingService {
         if (destination == null || destination[0] == null || destination[1] == null)
             return new Eta(null, 0, Instant.now());
         BigDecimal distance = BigDecimal.valueOf(haversine(location.latitude(), location.longitude(), (BigDecimal) destination[0], (BigDecimal) destination[1])).setScale(2, RoundingMode.HALF_UP);
-        return new Eta(distance, Math.max(1, distance.multiply(BigDecimal.valueOf(2)).setScale(0, RoundingMode.UP).intValue()), Instant.now());
+        return new Eta(distance, etaService.remainingMinutes(distance), Instant.now());
     }
 
     private Optional<Location> current(UUID tenantId, UUID courierId) {

@@ -200,11 +200,14 @@ public class MerchantCourierAssignmentService {
         if(s.deliveryId()==null&&"READY".equals(s.orderStatus())){
             db.sql("""
                 insert into deliveries(id,tenant_id,order_id,merchant_id,branch_id,customer_id,delivery_address_id,
-                  address_snapshot,status,delivery_type,delivery_fee,currency,delivery_notes)
+                  address_snapshot,status,delivery_type,distance_km,estimated_duration_minutes,
+                  delivery_fee,currency,delivery_notes)
                 select gen_random_uuid(),o.tenant_id,o.id,o.merchant_id,o.branch_id,o.customer_id,o.delivery_address_id,
                   jsonb_build_object('addressLine',a.address_line,'district',a.district,'recipientName',a.recipient_name,'phone',a.phone),
-                  'PENDING','PLATFORM_DELIVERY',o.delivery_fee,o.currency,o.notes
+                  'PENDING','PLATFORM_DELIVERY',o.delivery_distance_km,
+                  coalesce(o.eta_maximum_minutes,b.preparation_time_minutes,30),o.delivery_fee,o.currency,o.notes
                 from orders o join delivery_addresses a on a.id=o.delivery_address_id and a.tenant_id=o.tenant_id
+                join branches b on b.id=o.branch_id and b.tenant_id=o.tenant_id
                 where o.id=:order and o.tenant_id=:tenant and o.status='READY'
                   and not exists(select 1 from deliveries d where d.order_id=o.id and d.tenant_id=o.tenant_id
                     and d.status not in('DELIVERED','FAILED','CANCELLED','REJECTED','EXPIRED'))

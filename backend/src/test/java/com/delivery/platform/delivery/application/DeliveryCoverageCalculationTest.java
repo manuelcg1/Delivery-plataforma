@@ -7,6 +7,39 @@ import org.junit.jupiter.api.Test;
 
 class DeliveryCoverageCalculationTest {
     @Test
+    void calculatesDynamicFeeAndRoundsMoney() {
+        assertThat(fee("4.00", "1.50", "3.003", null, null, null, "20"))
+                .isEqualByComparingTo("8.50");
+    }
+
+    @Test
+    void appliesMinimumMaximumAndFreeDeliveryThreshold() {
+        assertThat(fee("1", "1", "1", "5", null, null, "20"))
+                .isEqualByComparingTo("5.00");
+        assertThat(fee("10", "2", "5", null, "15", null, "20"))
+                .isEqualByComparingTo("15.00");
+        assertThat(fee("4", "1.5", "3", "5", "15", "24", "24"))
+                .isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void supportsZeroDistance() {
+        assertThat(fee("4", "1.5", "0", null, null, null, "20"))
+                .isEqualByComparingTo("4.00");
+    }
+
+    private BigDecimal fee(String base, String perKm, String distance, String minimum,
+                           String maximum, String freeThreshold, String subtotal) {
+        return DeliveryCoverageService.calculateDeliveryFee(new BigDecimal(base),
+                new BigDecimal(perKm), new BigDecimal(distance), decimal(minimum),
+                decimal(maximum), decimal(freeThreshold), new BigDecimal(subtotal));
+    }
+
+    private BigDecimal decimal(String value) {
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    @Test
     void trujilloAddressInsideThreeKilometerRadiusIsCovered() {
         BigDecimal distance = DeliveryCoverageService.distanceKm(
                 new BigDecimal("-8.1116"), new BigDecimal("-79.0288"),
@@ -28,9 +61,9 @@ class DeliveryCoverageCalculationTest {
     @Test
     void rejectsMissingAndInvalidBranchCoordinates() {
         assertThat(DeliveryCoverageService.configurationError(null, null, true, new BigDecimal("3")))
-                .isEqualTo("BRANCH_LOCATION_MISSING");
+                .isEqualTo("BRANCH_COORDINATES_MISSING");
         assertThat(DeliveryCoverageService.configurationError(new BigDecimal("91"), BigDecimal.ZERO, true, new BigDecimal("3")))
-                .isEqualTo("BRANCH_LOCATION_MISSING");
+                .isEqualTo("BRANCH_COORDINATES_MISSING");
     }
 
     @Test

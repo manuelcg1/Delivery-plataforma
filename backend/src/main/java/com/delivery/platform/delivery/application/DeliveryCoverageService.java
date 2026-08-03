@@ -3,6 +3,7 @@ package com.delivery.platform.delivery.application;
 import com.delivery.platform.common.ApiException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -18,14 +19,26 @@ public class DeliveryCoverageService {
     private static final double EARTH_RADIUS_KM = 6371.0088;
     private static final BigDecimal DEFAULT_DELIVERY_FEE = new BigDecimal("5.00");
     private final JdbcClient db;
+    private final DeliveryEtaService etaService;
 
-    public DeliveryCoverageService(JdbcClient db) {
+    public DeliveryCoverageService(JdbcClient db, DeliveryEtaService etaService) {
         this.db = db;
+        this.etaService = etaService;
     }
 
-    public record Quote(boolean eligible, UUID zoneId, BigDecimal distanceKm,
-                        int estimatedMinutes, BigDecimal deliveryFee, String currency,
-                        BigDecimal minimumOrderAmount, String reasonCode, String message) {}
+    public record Quote(UUID merchantId, UUID branchId, UUID addressId, UUID zoneId,
+                        BigDecimal distanceKm, BigDecimal baseFee, BigDecimal feePerKm,
+                        BigDecimal minimumFee, BigDecimal maximumFee,
+                        BigDecimal freeDeliveryThreshold, BigDecimal deliveryFee,
+                        boolean freeDeliveryApplied, boolean fallbackApplied, boolean covered,
+                        String reasonCode, String message, String currency,
+                        BigDecimal minimumOrderAmount, int estimatedMinutes,
+                        int minimumEstimatedMinutes, int maximumEstimatedMinutes,
+                        int preparationMinutes, int assignmentMinutes,
+                        int courierToMerchantMinutes, int merchantToCustomerMinutes,
+                        Instant quotedAt) {
+        public boolean eligible() { return covered; }
+    }
 
     private record Destination(BigDecimal latitude, BigDecimal longitude) {}
     private record BranchCoverage(BigDecimal latitude, BigDecimal longitude,
@@ -44,7 +57,7 @@ public class DeliveryCoverageService {
         } catch (DataAccessException exception) {
             log.warn("coverage service database failure merchantId={} branchId={} addressId={}",
                     merchant, branch, address);
-            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "COVERAGE_SERVICE_ERROR",
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "DELIVERY_QUOTE_FAILED",
                     "No pudimos validar la cobertura. Intenta nuevamente.");
         }
     }
@@ -73,9 +86,9 @@ public class DeliveryCoverageService {
 
         String configurationError = configurationError(coverage.latitude(), coverage.longitude(),
                 coverage.enabled(), coverage.radiusKm());
-        if ("BRANCH_LOCATION_MISSING".equals(configurationError)) {
+        if ("BRANCH_COORDINATES_MISSING".equals(configurationError)) {
             rejectedLog(merchant, branch, address, coverage, destination, null, false, null);
-            return rejected("BRANCH_LOCATION_MISSING",
+            return rejected("BRANCH_COORDINATES_MISSING",
                     "Esta sucursal todavía no tiene una ubicación configurada.");
         }
         if ("COVERAGE_NOT_CONFIGURED".equals(configurationError)) {
@@ -89,8 +102,8 @@ public class DeliveryCoverageService {
         boolean covered = distance.compareTo(coverage.radiusKm()) <= 0;
         if (!covered) {
             rejectedLog(merchant, branch, address, coverage, destination, distance, false, null);
-            return new Quote(false, null, distance, coverage.minutes(), null, coverage.currency(),
-                    coverage.minimumOrder(), "OUTSIDE_COVERAGE",
+            return rejected(merchant, branch, address, null, distance, coverage,
+                    "DELIVERY_NOT_COVERED",
                     "Este comercio todavía no realiza entregas en esta ubicación.");
         }
 
@@ -100,27 +113,58 @@ public class DeliveryCoverageService {
                         result.getBigDecimal("base_fee"), result.getBigDecimal("fee_per_km"),
                         result.getBigDecimal("minimum_fee"), result.getBigDecimal("maximum_fee"),
                         result.getBigDecimal("free_delivery_threshold"))).optional();
+        boolean fallbackApplied = configuredRate.isEmpty();
         Rate rate = configuredRate.orElse(new Rate(null, DEFAULT_DELIVERY_FEE,
                 BigDecimal.ZERO, null, null, null));
-        BigDecimal fee = rate.baseFee().add(distance.multiply(rate.feePerKm()));
-        if (rate.minimumFee() != null) fee = fee.max(rate.minimumFee());
-        if (rate.maximumFee() != null) fee = fee.min(rate.maximumFee());
-        if (rate.freeDeliveryThreshold() != null
-                && subtotal.compareTo(rate.freeDeliveryThreshold()) >= 0) fee = BigDecimal.ZERO;
+        if (fallbackApplied) {
+            log.warn("delivery rate fallback applied merchantId={} branchId={} fee={}",
+                    merchant, branch, DEFAULT_DELIVERY_FEE);
+        }
+        boolean freeDeliveryApplied = rate.freeDeliveryThreshold() != null
+                && subtotal.compareTo(rate.freeDeliveryThreshold()) >= 0;
+        BigDecimal fee = calculateDeliveryFee(rate.baseFee(), rate.feePerKm(), distance,
+                rate.minimumFee(), rate.maximumFee(), rate.freeDeliveryThreshold(), subtotal);
 
         rejectedLog(merchant, branch, address, coverage, destination, distance, true, rate.zoneId());
         if (subtotal.compareTo(coverage.minimumOrder()) < 0) {
-            return new Quote(false, rate.zoneId(), distance, coverage.minutes(), null,
-                    coverage.currency(), coverage.minimumOrder(), "DELIVERY_MINIMUM_NOT_REACHED",
-                    "No alcanza el pedido mínimo");
+            DeliveryEtaService.Estimate eta = etaService.quote(coverage.minutes(), distance);
+            return new Quote(merchant, branch, address, rate.zoneId(), distance,
+                    money(rate.baseFee()), money(rate.feePerKm()), money(rate.minimumFee()),
+                    money(rate.maximumFee()), money(rate.freeDeliveryThreshold()), null,
+                    freeDeliveryApplied, fallbackApplied, false, "MINIMUM_ORDER_NOT_REACHED",
+                    "No alcanza el pedido mínimo", coverage.currency(),
+                    money(coverage.minimumOrder()), eta.estimatedMinutes(), eta.minimumMinutes(),
+                    eta.maximumMinutes(), eta.preparationMinutes(), eta.assignmentMinutes(),
+                    eta.courierToMerchantMinutes(), eta.merchantToCustomerMinutes(), Instant.now());
         }
-        return new Quote(true, rate.zoneId(), distance, coverage.minutes(),
-                fee.setScale(2, RoundingMode.HALF_UP), coverage.currency(),
-                coverage.minimumOrder(), null, "Cobertura disponible");
+        DeliveryEtaService.Estimate eta = etaService.quote(coverage.minutes(), distance);
+        return new Quote(merchant, branch, address, rate.zoneId(), distance,
+                money(rate.baseFee()), money(rate.feePerKm()), money(rate.minimumFee()),
+                money(rate.maximumFee()), money(rate.freeDeliveryThreshold()), money(fee),
+                freeDeliveryApplied, fallbackApplied, true, null, "Cobertura disponible",
+                coverage.currency(), money(coverage.minimumOrder()), eta.estimatedMinutes(),
+                eta.minimumMinutes(), eta.maximumMinutes(), eta.preparationMinutes(),
+                eta.assignmentMinutes(), eta.courierToMerchantMinutes(),
+                eta.merchantToCustomerMinutes(), Instant.now());
     }
 
     private Quote rejected(String code, String message) {
-        return new Quote(false, null, null, 0, null, null, null, code, message);
+        return rejected(null, null, null, null, null, null, code, message);
+    }
+
+    private Quote rejected(UUID merchant, UUID branch, UUID address, UUID zone,
+                           BigDecimal distance, BranchCoverage coverage,
+                           String code, String message) {
+        return new Quote(merchant, branch, address, zone, distance, null, null,
+                null, null, null, null, false, false, false, code, message,
+                coverage == null ? null : coverage.currency(),
+                coverage == null ? null : money(coverage.minimumOrder()),
+                coverage == null ? 0 : coverage.minutes(), 0, 0,
+                coverage == null ? 0 : coverage.minutes(), 0, 0, 0, Instant.now());
+    }
+
+    private static BigDecimal money(BigDecimal value) {
+        return value == null ? null : value.setScale(2, RoundingMode.HALF_UP);
     }
 
     static BigDecimal distanceKm(BigDecimal fromLatitude, BigDecimal fromLongitude,
@@ -143,9 +187,20 @@ public class DeliveryCoverageService {
                 && longitude.compareTo(BigDecimal.valueOf(180)) <= 0;
     }
 
+    static BigDecimal calculateDeliveryFee(BigDecimal baseFee, BigDecimal feePerKm,
+                                           BigDecimal distanceKm, BigDecimal minimumFee,
+                                           BigDecimal maximumFee, BigDecimal freeThreshold,
+                                           BigDecimal subtotal) {
+        BigDecimal fee = baseFee.add(distanceKm.multiply(feePerKm));
+        if (minimumFee != null) fee = fee.max(minimumFee);
+        if (maximumFee != null) fee = fee.min(maximumFee);
+        if (freeThreshold != null && subtotal.compareTo(freeThreshold) >= 0) fee = BigDecimal.ZERO;
+        return money(fee);
+    }
+
     static String configurationError(BigDecimal latitude, BigDecimal longitude,
                                      boolean enabled, BigDecimal radiusKm) {
-        if (!validCoordinates(latitude, longitude)) return "BRANCH_LOCATION_MISSING";
+        if (!validCoordinates(latitude, longitude)) return "BRANCH_COORDINATES_MISSING";
         if (!enabled || radiusKm == null || radiusKm.signum() <= 0) return "COVERAGE_NOT_CONFIGURED";
         return null;
     }

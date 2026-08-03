@@ -10,6 +10,18 @@ void main() {
     expect(cart.currency, 'PEN');
   });
 
+  test('cleared cart cache resets merchant branch identifiers and totals', () {
+    final cached = emptyCartCache(currency: 'PEN');
+    final cart = Cart.fromJson(cached);
+
+    expect(cart.items, isEmpty);
+    expect(cart.merchantId, isEmpty);
+    expect(cart.branchId, isEmpty);
+    expect(cart.total, 0);
+    expect(cached['subtotal'], 0);
+    expect(cached['deliveryFee'], 0);
+  });
+
   test('maps server cart totals without trusting local prices', () {
     final cart = Cart.fromJson({
       'items': [

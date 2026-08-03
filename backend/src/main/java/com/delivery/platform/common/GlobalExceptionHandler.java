@@ -5,7 +5,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException; import org.
 import java.time.Instant; import java.util.*; import com.delivery.platform.catalog.media.infrastructure.MinioCatalogStorage.MediaException;
 @RestControllerAdvice public class GlobalExceptionHandler {
  private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
- @ExceptionHandler(ApiException.class) ResponseEntity<ApiError> api(ApiException e,HttpServletRequest r){return body(e.status,e.code,e.getMessage(),r,Map.of());}
+ @ExceptionHandler(ApiException.class) ResponseEntity<ApiError> api(ApiException e,HttpServletRequest r){return body(e.status,e.code,e.getMessage(),r,e.details);}
  @ExceptionHandler(MediaException.class) ResponseEntity<ApiError> media(MediaException e,HttpServletRequest r){return body(HttpStatus.BAD_REQUEST,e.code,e.getMessage(),r,Map.of());}
  @ExceptionHandler(MethodArgumentNotValidException.class) ResponseEntity<ApiError> validation(MethodArgumentNotValidException e,HttpServletRequest r){Map<String,String>d=new LinkedHashMap<>();e.getBindingResult().getFieldErrors().forEach(x->d.putIfAbsent(x.getField(),x.getDefaultMessage()));return body(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","La solicitud contiene datos inválidos",r,d);}
  @ExceptionHandler(AccessDeniedException.class) ResponseEntity<ApiError> denied(AccessDeniedException e,HttpServletRequest r){return body(HttpStatus.FORBIDDEN,"ACCESS_DENIED","No tiene permiso para esta operación",r,Map.of());}

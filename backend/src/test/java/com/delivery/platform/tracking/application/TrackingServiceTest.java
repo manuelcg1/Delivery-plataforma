@@ -17,6 +17,8 @@ class TrackingServiceTest {
             mock(org.springframework.data.redis.core.StringRedisTemplate.class),
             mock(com.delivery.platform.tracking.realtime.RealtimeGateway.class),
             mock(com.delivery.platform.tracking.realtime.CourierTrackingEventPublisher.class),
+            new com.delivery.platform.delivery.application.DeliveryEtaService(
+                    5, 10, BigDecimal.valueOf(25), 5),
             BigDecimal.valueOf(100), BigDecimal.valueOf(180));
 
     @Test

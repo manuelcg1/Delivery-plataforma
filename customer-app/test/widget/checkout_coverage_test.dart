@@ -46,7 +46,7 @@ void main() {
     final text = tester
         .widgetList<Text>(find.byType(Text))
         .firstWhere((widget) => widget.data?.contains('Mercurio 405') ?? false);
-    expect(text.maxLines, 1);
+    expect(text.maxLines, 2);
     expect(text.overflow, TextOverflow.ellipsis);
     expect(tester.takeException(), isNull);
   });
@@ -56,7 +56,7 @@ void main() {
         (tester) async {
       await pumpSelector(tester, width,
           'Mercurio 405, urbanización muy extensa, Trujillo 13011, Perú');
-      expect(find.byIcon(Icons.arrow_drop_down), findsOneWidget);
+      expect(find.byIcon(Icons.chevron_right_rounded), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -74,8 +74,9 @@ void main() {
         ),
       ),
     ));
-    expect(find.text('Cobertura disponible'), findsOneWidget);
+    expect(find.text('Entrega disponible'), findsOneWidget);
     expect(find.textContaining('30 min'), findsOneWidget);
+    expect(find.textContaining('5.00'), findsOneWidget);
   });
 
   testWidgets('muestra dirección fuera de cobertura', (tester) async {
@@ -90,9 +91,7 @@ void main() {
       ),
     ));
     expect(
-        find.text(
-            'Este comercio todavía no realiza entregas en esta ubicación.'),
-        findsOneWidget);
+        find.text('No entregamos todavía en esta dirección.'), findsOneWidget);
   });
 
   testWidgets('muestra comercio sin zona', (tester) async {
@@ -105,9 +104,7 @@ void main() {
       ),
     ));
     expect(
-        find.text(
-            'Esta sucursal todavía no tiene una zona de reparto configurada.'),
-        findsOneWidget);
+        find.text('No entregamos todavía en esta dirección.'), findsOneWidget);
   });
 
   test('diferencia error de dirección y error temporal', () {

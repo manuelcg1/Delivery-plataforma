@@ -33,9 +33,14 @@ class Cart {
     required this.currency,
     required this.merchantId,
     required this.branchId,
+    required this.subtotal,
+    required this.discount,
+    required this.tax,
+    required this.deliveryFee,
   });
   final List<CartItem> items;
   final double total;
+  final double subtotal, discount, tax, deliveryFee;
   final String currency, merchantId, branchId;
   factory Cart.empty({String currency = 'PEN'}) => Cart(
         items: const [],
@@ -43,6 +48,10 @@ class Cart {
         currency: currency,
         merchantId: '',
         branchId: '',
+        subtotal: 0,
+        discount: 0,
+        tax: 0,
+        deliveryFee: 0,
       );
   factory Cart.fromJson(Map<String, dynamic> j) => Cart(
         items: (j['items'] as List<dynamic>)
@@ -52,6 +61,10 @@ class Cart {
         currency: j['currency'] as String,
         merchantId: j['merchantId']?.toString() ?? '',
         branchId: j['branchId']?.toString() ?? '',
+        subtotal: (j['subtotal'] as num?)?.toDouble() ?? 0,
+        discount: (j['discount'] as num?)?.toDouble() ?? 0,
+        tax: (j['tax'] as num?)?.toDouble() ?? 0,
+        deliveryFee: (j['deliveryFee'] as num?)?.toDouble() ?? 0,
       );
 }
 
@@ -60,31 +73,63 @@ class CoverageResult {
       {required this.covered,
       this.deliveryFee,
       this.estimatedMinutes,
+      this.minimumEstimatedMinutes,
+      this.maximumEstimatedMinutes,
       this.zoneId,
       this.reasonCode,
-      this.message});
+      this.message,
+      this.distanceKm,
+      this.baseFee,
+      this.feePerKm,
+      this.minimumFee,
+      this.maximumFee,
+      this.freeDeliveryThreshold,
+      this.minimumOrderAmount,
+      this.freeDeliveryApplied = false,
+      this.fallbackApplied = false,
+      this.quotedAt});
   final bool covered;
   final double? deliveryFee;
   final int? estimatedMinutes;
+  final int? minimumEstimatedMinutes, maximumEstimatedMinutes;
+  final double? distanceKm, baseFee, feePerKm, minimumFee, maximumFee;
+  final double? freeDeliveryThreshold, minimumOrderAmount;
+  final bool freeDeliveryApplied, fallbackApplied;
+  final String? quotedAt;
   final String? zoneId, reasonCode, message;
   factory CoverageResult.fromJson(Map<String, dynamic> json) => CoverageResult(
       covered: json['covered'] as bool,
       deliveryFee: (json['deliveryFee'] as num?)?.toDouble(),
       estimatedMinutes: json['estimatedMinutes'] as int?,
+      minimumEstimatedMinutes: json['minimumEstimatedMinutes'] as int?,
+      maximumEstimatedMinutes: json['maximumEstimatedMinutes'] as int?,
       zoneId: json['zoneId'] as String?,
       reasonCode: json['reasonCode'] as String?,
-      message: json['message'] as String?);
+      message: json['message'] as String?,
+      distanceKm: (json['distanceKm'] as num?)?.toDouble(),
+      baseFee: (json['baseFee'] as num?)?.toDouble(),
+      feePerKm: (json['feePerKm'] as num?)?.toDouble(),
+      minimumFee: (json['minimumFee'] as num?)?.toDouble(),
+      maximumFee: (json['maximumFee'] as num?)?.toDouble(),
+      freeDeliveryThreshold:
+          (json['freeDeliveryThreshold'] as num?)?.toDouble(),
+      minimumOrderAmount: (json['minimumOrderAmount'] as num?)?.toDouble(),
+      freeDeliveryApplied: json['freeDeliveryApplied'] as bool? ?? false,
+      fallbackApplied: json['fallbackApplied'] as bool? ?? false,
+      quotedAt: json['quotedAt'] as String?);
 }
 
 String coverageMessageForCode(String? code) => switch (code) {
       'COVERAGE_NOT_CONFIGURED' =>
         'Esta sucursal todavía no tiene una zona de reparto configurada.',
-      'BRANCH_LOCATION_MISSING' =>
+      'BRANCH_LOCATION_MISSING' ||
+      'BRANCH_COORDINATES_MISSING' =>
         'Esta sucursal todavía no tiene una ubicación configurada.',
       'ADDRESS_COORDINATES_MISSING' ||
       'ADDRESS_NOT_RESOLVED' =>
         'No pudimos validar esta dirección. Edítala o selecciona otra.',
       'OUTSIDE_COVERAGE' ||
+      'DELIVERY_NOT_COVERED' ||
       'DELIVERY_OUT_OF_COVERAGE' =>
         'Este comercio todavía no realiza entregas en esta ubicación.',
       _ => 'No pudimos verificar la cobertura. Intenta nuevamente.',
@@ -167,6 +212,7 @@ class CommerceRepository {
   CommerceRepository(this.api);
   final ApiClient api;
   String errorMessage(Object error) => api.exception(error).message;
+  String errorCode(Object error) => api.exception(error).code;
   String coverageErrorMessage(Object error) =>
       coverageMessageForCode(api.exception(error).code);
   Future<Cart> cart() async {
@@ -196,6 +242,7 @@ class CommerceRepository {
         'quantity': quantity,
       },
     );
+    await OfflineCache.write('cart:last', r.data!);
     return Cart.fromJson(r.data!);
   }
 
@@ -203,31 +250,36 @@ class CommerceRepository {
     final response = await api.dio.put<Map<String, dynamic>>(
         '/api/v1/cart/items/$id',
         data: {'quantity': quantity});
+    await OfflineCache.write('cart:last', response.data!);
     return Cart.fromJson(response.data!);
   }
 
   Future<Cart> removeItem(String id) async {
     final response =
         await api.dio.delete<Map<String, dynamic>>('/api/v1/cart/items/$id');
+    await OfflineCache.write('cart:last', response.data!);
     return Cart.fromJson(response.data!);
   }
 
-  Future<void> clearCart() => api.dio.delete<void>('/api/v1/cart');
+  Future<void> clearCart() async {
+    await api.dio.delete<void>('/api/v1/cart');
+    await OfflineCache.write('cart:last', emptyCartCache());
+  }
 
-  Future<Order> checkout(String addressId) async {
+  Future<Order> checkout(String addressId, double expectedDeliveryFee) async {
     final r = await api.dio.post<Map<String, dynamic>>(
       '/api/v1/orders',
-      data: {'deliveryAddressId': addressId},
+      data: {
+        'deliveryAddressId': addressId,
+        'expectedDeliveryFee': expectedDeliveryFee,
+      },
       options: Options(headers: {'Idempotency-Key': const Uuid().v4()}),
     );
     final order = Order.fromJson(r.data!);
     // The backend changes the active cart to CHECKED_OUT. Keep the offline
     // fallback in sync so a later CART_NOT_FOUND cannot restore old items.
-    await OfflineCache.write('cart:last', {
-      'items': <Object>[],
-      'total': 0,
-      'currency': order.currency,
-    });
+    await OfflineCache.write(
+        'cart:last', emptyCartCache(currency: order.currency));
     return order;
   }
 
@@ -328,3 +380,17 @@ class CommerceRepository {
         .toList();
   }
 }
+
+Map<String, dynamic> emptyCartCache({String currency = 'PEN'}) => {
+      'id': '',
+      'merchantId': '',
+      'branchId': '',
+      'items': <Object>[],
+      'subtotal': 0,
+      'discount': 0,
+      'tax': 0,
+      'deliveryFee': 0,
+      'total': 0,
+      'currency': currency,
+      'notes': null,
+    };
