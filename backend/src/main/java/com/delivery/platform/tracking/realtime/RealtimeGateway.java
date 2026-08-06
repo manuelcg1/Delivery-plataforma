@@ -38,5 +38,9 @@ public class RealtimeGateway {
                         audience.status()));
     }
 
+    public void customerOrder(UUID customerId, UUID orderId, Object payload) {
+        messaging.convertAndSendToUser(customerId.toString(), "/queue/orders/"+orderId+"/tracking", payload);
+    }
+
     record DeliveryAudience(UUID orderId, UUID customerId, UUID courierId, String status) {}
 }

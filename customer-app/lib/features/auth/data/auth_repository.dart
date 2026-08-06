@@ -59,12 +59,9 @@ class AuthRepository {
         'password': password,
       });
   Future<SessionUser> restore() async {
-    final refresh = await store.refreshToken();
-    final response = await api.dio.post<Map<String, dynamic>>(
-      '/api/v1/auth/refresh-mobile',
-      data: {'refreshToken': refresh},
-    );
-    return _save(response.data!);
+    await api.ensureValidSession();
+    final response=await api.dio.get<Map<String,dynamic>>('/api/v1/auth/me');
+    return SessionUser.fromJson(response.data!);
   }
 
   Future<void> logout() async {

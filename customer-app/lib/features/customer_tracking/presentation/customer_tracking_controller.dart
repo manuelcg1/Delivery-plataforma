@@ -31,11 +31,13 @@ class CustomerTrackingState {
     this.stale = true,
     this.error,
     this.tracking,
+    this.arrivalNoticeId,
   });
 
   final bool loading, connected, reconnecting, polling, trackingActive, stale;
   final String? error;
   final CustomerOrderTracking? tracking;
+  final String? arrivalNoticeId;
 
   CustomerTrackingState copyWith({
     bool? loading,
@@ -47,6 +49,7 @@ class CustomerTrackingState {
     String? error,
     bool clearError = false,
     CustomerOrderTracking? tracking,
+    String? arrivalNoticeId,
   }) =>
       CustomerTrackingState(
         loading: loading ?? this.loading,
@@ -57,6 +60,7 @@ class CustomerTrackingState {
         stale: stale ?? this.stale,
         error: clearError ? null : error ?? this.error,
         tracking: tracking ?? this.tracking,
+        arrivalNoticeId: arrivalNoticeId ?? this.arrivalNoticeId,
       );
 }
 
@@ -174,6 +178,9 @@ class CustomerOrderTrackingController
       trackingActive: next.trackingActive,
       stale: next.stale,
       clearError: true,
+      arrivalNoticeId: event.type == 'COURIER_ARRIVED'
+          ? (event.deliveryId ?? event.publishedAt.toIso8601String())
+          : state.arrivalNoticeId,
     );
     if (terminal) unawaited(_stopTransport());
   }

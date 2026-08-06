@@ -33,3 +33,4 @@ final customerRealtimeClientProvider = Provider((ref) {
 });
 
 final customerMainTabProvider = StateProvider<int>((_) => 0);
+final appRecoveryRevisionProvider = StateProvider<int>((_) => 0);

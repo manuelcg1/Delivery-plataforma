@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../core/providers.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../orders/presentation/commerce_pages.dart';
+import '../../../core/widgets/cart_feedback.dart';
 import '../../address/presentation/customer_address_form_page.dart';
 import '../data/customer_repository.dart';
 
@@ -22,97 +24,365 @@ final favoritesProvider = FutureProvider(
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authControllerProvider).value;
-    final addresses = ref.watch(addressesProvider),
-        merchants = ref.watch(merchantsProvider);
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(addressesProvider);
-        ref.invalidate(merchantsProvider);
-      },
-      child: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Text(
-            'Hola, ${user?.firstName ?? ''}',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const Text('¿Qué quieres pedir hoy?'),
-          const SizedBox(height: 20),
-          addresses.when(
-            data: (items) => Card(
-              child: ListTile(
-                leading: const Icon(Icons.location_on_outlined),
-                title: Text(
-                  items.isEmpty ? 'Agrega una dirección' : items.first.label,
-                ),
-                subtitle: Text(
-                  items.isEmpty
-                      ? 'Necesaria para validar cobertura'
-                      : items.first.addressLine,
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AddressesPage(),
-                  ),
-                ),
+    final addresses = ref.watch(addressesProvider);
+    final merchants = ref.watch(merchantsProvider);
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        gradient: RadialGradient(
+          center: Alignment(1.08, -1.05),
+          radius: .72,
+          colors: [Color(0xFFFFF4E8), Colors.white],
+          stops: [0, .72],
+        ),
+      ),
+      child: RefreshIndicator(
+        color: _homeOrange,
+        onRefresh: () async {
+          ref.invalidate(addressesProvider);
+          ref.invalidate(merchantsProvider);
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontalPadding = constraints.maxWidth >= 700 ? 40.0 : 20.0;
+            final contentWidth = constraints.maxWidth >= 900 ? 760.0 : 680.0;
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                constraints.maxHeight < 650 ? 16 : 24,
+                horizontalPadding,
+                112,
               ),
-            ),
-            loading: () => const LinearProgressIndicator(),
-            error: (_, __) => const SizedBox(),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Comercios disponibles',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          merchants.when(
-            data: (items) {
-              if (items.isEmpty)
-                return const EmptyState(
-                  title: 'Sin comercios',
-                  message:
-                      'No hay comercios activos con sucursales disponibles.',
-                );
-              return Column(
-                children: items
-                    .map(
-                      (merchant) => Card(
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            child: Text(merchant.name.substring(0, 1)),
-                          ),
-                          title: Text(merchant.name),
-                          subtitle: Text(
-                            '${merchant.branchName} · ${merchant.description}',
-                          ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => MerchantPage(merchant: merchant),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: contentWidth),
+                    child: _HomeEntrance(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Hola, ${user?.firstName ?? ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              color: _homeNavy,
+                              fontSize: constraints.maxWidth < 350 ? 26 : 28,
+                              height: 1.15,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '¿Qué quieres pedir hoy?',
+                            style: GoogleFonts.poppins(
+                              color: _homeSecondary,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          addresses.when(
+                            data: (items) => _AddressHomeCard(
+                              label: items.isEmpty
+                                  ? 'Agrega una dirección'
+                                  : items.first.label,
+                              address: items.isEmpty
+                                  ? 'Necesaria para validar cobertura'
+                                  : items.first.addressLine,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const AddressesPage(),
+                                ),
+                              ),
+                            ),
+                            loading: () => const _HomeCardSkeleton(),
+                            error: (_, __) => const SizedBox.shrink(),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Comercios disponibles',
+                            style: GoogleFonts.poppins(
+                              color: _homeNavy,
+                              fontSize: constraints.maxWidth < 350 ? 18 : 19,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          merchants.when(
+                            data: (items) {
+                              if (items.isEmpty) {
+                                return const EmptyState(
+                                  title: 'Sin comercios',
+                                  message: 'No hay comercios activos con '
+                                      'sucursales disponibles.',
+                                );
+                              }
+                              return Column(
+                                children: [
+                                  for (var index = 0;
+                                      index < items.length;
+                                      index++) ...[
+                                    _MerchantHomeCard(
+                                      merchant: items[index],
+                                      onTap: () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => MerchantPage(
+                                            merchant: items[index],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    if (index < items.length - 1)
+                                      const SizedBox(height: 8),
+                                  ],
+                                ],
+                              );
+                            },
+                            loading: () => const Column(
+                              children: [
+                                _HomeCardSkeleton(),
+                                SizedBox(height: 8),
+                                _HomeCardSkeleton(),
+                              ],
+                            ),
+                            error: (error, _) => ErrorState(
+                              message: error.toString(),
+                              onRetry: () => ref.invalidate(merchantsProvider),
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                    .toList(),
-              );
-            },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => ErrorState(
-              message: e.toString(),
-              onRetry: () => ref.invalidate(merchantsProvider),
-            ),
-          ),
-        ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
+}
+
+const _homeNavy = Color(0xFF06163A);
+const _homeOrange = Color(0xFFFF7C00);
+const _homePrimary = Color(0xFF111827);
+const _homeSecondary = Color(0xFF6B7280);
+const _homeDivider = Color(0xFFF1F5F9);
+
+class _HomeEntrance extends StatelessWidget {
+  const _HomeEntrance({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        tween: Tween(begin: 0, end: 1),
+        child: child,
+        builder: (context, value, child) => Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 12 * (1 - value)),
+            child: child,
+          ),
+        ),
+      );
+}
+
+class _AddressHomeCard extends StatelessWidget {
+  const _AddressHomeCard({
+    required this.label,
+    required this.address,
+    required this.onTap,
+  });
+  final String label;
+  final String address;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => _HomeCard(
+        onTap: onTap,
+        child: Row(
+          children: [
+            const _HomeIconBox(
+              icon: Icons.location_on_outlined,
+              background: Color(0xFFFFF4E8),
+              foreground: _homeOrange,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        color: _homePrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      )),
+                  const SizedBox(height: 2),
+                  Text(address,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        color: _homeSecondary,
+                        fontSize: 12,
+                        height: 1.35,
+                      )),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded, color: _homeNavy, size: 28),
+          ],
+        ),
+      );
+}
+
+class _MerchantHomeCard extends StatelessWidget {
+  const _MerchantHomeCard({required this.merchant, required this.onTap});
+  final Merchant merchant;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => _HomeCard(
+        onTap: onTap,
+        child: Row(
+          children: [
+            Hero(
+              tag: 'merchant-avatar-${merchant.id}',
+              child: _HomeIconBox(
+                text: merchant.name.substring(0, 1).toUpperCase(),
+                background: const Color(0xFFF0EEFF),
+                foreground: const Color(0xFF4F46E5),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(merchant.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        color: _homePrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      )),
+                  const SizedBox(height: 2),
+                  Text('${merchant.branchName} · ${merchant.description}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        color: _homeSecondary,
+                        fontSize: 12,
+                      )),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded, color: _homeNavy, size: 28),
+          ],
+        ),
+      );
+}
+
+class _HomeCard extends StatelessWidget {
+  const _HomeCard({required this.child, required this.onTap});
+  final Widget child;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        elevation: 0,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          overlayColor: const WidgetStatePropertyAll(Color(0x14FF7C00)),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 80),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: _homeDivider),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x140F172A),
+                  blurRadius: 18,
+                  offset: Offset(0, 7),
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        ),
+      );
+}
+
+class _HomeIconBox extends StatelessWidget {
+  const _HomeIconBox({
+    this.icon,
+    this.text,
+    this.size = 48,
+    required this.background,
+    required this.foreground,
+  });
+  final IconData? icon;
+  final String? text;
+  final double size;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: background, shape: BoxShape.circle),
+        child: icon != null
+            ? Icon(icon, color: foreground, size: size * .53)
+            : Text(text!,
+                style: GoogleFonts.poppins(
+                  color: foreground,
+                  fontSize: size * .44,
+                  fontWeight: FontWeight.w600,
+                )),
+      );
+}
+
+class _HomeCardSkeleton extends StatelessWidget {
+  const _HomeCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        constraints: const BoxConstraints(minHeight: 80),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: _homeDivider),
+        ),
+        child: const Center(
+          child: SizedBox.square(
+            dimension: 24,
+            child: CircularProgressIndicator(strokeWidth: 2.4),
+          ),
+        ),
+      );
 }
 
 class AddressesPage extends ConsumerWidget {
@@ -317,34 +587,50 @@ class MerchantPage extends ConsumerWidget {
       merchant.id,
     );
     return Scaffold(
-      appBar: AppBar(title: Text(merchant.name), actions: [
-        IconButton(
-            tooltip: favorite == null
-                ? 'Agregar a favoritos'
-                : 'Quitar de favoritos',
-            icon: Icon(
-              favorite == null ? Icons.favorite_border : Icons.favorite,
-              color: favorite == null ? null : Colors.red,
+      appBar: AppBar(
+          title: Row(children: [
+            Hero(
+              tag: 'merchant-avatar-${merchant.id}',
+              child: _HomeIconBox(
+                text: merchant.name.substring(0, 1).toUpperCase(),
+                size: 36,
+                background: const Color(0xFFF0EEFF),
+                foreground: const Color(0xFF4F46E5),
+              ),
             ),
-            onPressed: favorites.isLoading
-                ? null
-                : () async {
-                    final repository = ref.read(customerRepositoryProvider);
-                    if (favorite == null) {
-                      await repository.addMerchantFavorite(merchant.id);
-                    } else {
-                      await repository.removeFavorite(favorite.id);
-                    }
-                    ref.invalidate(favoritesProvider);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(favorite == null
-                            ? 'Comercio agregado a favoritos'
-                            : 'Comercio eliminado de favoritos'),
-                      ));
-                    }
-                  })
-      ]),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(merchant.name, overflow: TextOverflow.ellipsis),
+            ),
+          ]),
+          actions: [
+            IconButton(
+                tooltip: favorite == null
+                    ? 'Agregar a favoritos'
+                    : 'Quitar de favoritos',
+                icon: Icon(
+                  favorite == null ? Icons.favorite_border : Icons.favorite,
+                  color: favorite == null ? null : Colors.red,
+                ),
+                onPressed: favorites.isLoading
+                    ? null
+                    : () async {
+                        final repository = ref.read(customerRepositoryProvider);
+                        if (favorite == null) {
+                          await repository.addMerchantFavorite(merchant.id);
+                        } else {
+                          await repository.removeFavorite(favorite.id);
+                        }
+                        ref.invalidate(favoritesProvider);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(favorite == null
+                                ? 'Comercio agregado a favoritos'
+                                : 'Comercio eliminado de favoritos'),
+                          ));
+                        }
+                      })
+          ]),
       body: FutureBuilder<List<Product>>(
         future:
             ref.read(customerRepositoryProvider).products(merchant.branchId),
@@ -369,12 +655,26 @@ class MerchantPage extends ConsumerWidget {
                     trailing: Text(
                       '${product.currency} ${product.price.toStringAsFixed(2)}',
                     ),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            ProductPage(merchant: merchant, product: product),
-                      ),
-                    ),
+                    onTap: () async {
+                      final result = await Navigator.of(context).push(
+                        MaterialPageRoute<ProductAddedResult>(
+                          builder: (_) =>
+                              ProductPage(merchant: merchant, product: product),
+                        ),
+                      );
+                      if (result == null || !context.mounted) return;
+                      final navigator = Navigator.of(context);
+                      showProductAddedSnackBar(
+                        ScaffoldMessenger.of(context),
+                        productName: result.productName,
+                        quantity: result.quantity,
+                        onViewCart: () => navigator.push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const CartPage(),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),

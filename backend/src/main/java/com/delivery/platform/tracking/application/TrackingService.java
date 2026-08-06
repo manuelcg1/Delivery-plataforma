@@ -44,12 +44,14 @@ public class TrackingService {
     private final RealtimeGateway realtime;
     private final CourierTrackingEventPublisher trackingEvents;
     private final DeliveryEtaService etaService;
+    private final CourierArrivalDetectionService arrivals;
     private final BigDecimal maximumAccuracy;
     private final BigDecimal maximumSpeedKph;
 
     public TrackingService(JdbcClient db, StringRedisTemplate redis, RealtimeGateway realtime,
                            CourierTrackingEventPublisher trackingEvents,
                            DeliveryEtaService etaService,
+                           CourierArrivalDetectionService arrivals,
                            @Value("${tracking.maximum-accuracy-meters:100}") BigDecimal maximumAccuracy,
                            @Value("${tracking.maximum-speed-kph:180}") BigDecimal maximumSpeedKph) {
         this.db = db;
@@ -57,6 +59,7 @@ public class TrackingService {
         this.realtime = realtime;
         this.trackingEvents = trackingEvents;
         this.etaService = etaService;
+        this.arrivals = arrivals;
         this.maximumAccuracy = maximumAccuracy;
         this.maximumSpeedKph = maximumSpeedKph;
     }
@@ -117,6 +120,8 @@ public class TrackingService {
                 .param("p", "{\"source\":\"courier-api\"}").update();
         trackingEvents.publishLocationUpdated(principal.tenantId(), delivery.customerUserId(), courier.id(),
                 delivery.orderId(), deliveryId, delivery.status(), saved);
+        arrivals.detect(principal.tenantId(), deliveryId, courier.id(), id, command.latitude(),
+                command.longitude(), command.accuracy(), command.gpsTimestamp());
         return Optional.of(saved);
     }
 

@@ -404,6 +404,20 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
     }
   }
 
+  Future<void> markArrived() async {
+    setState(() => busy=true);
+    try {
+      final notified=await ref.read(courierRepositoryProvider).markArrived(delivery.orderId);
+      delivery=await ref.read(courierRepositoryProvider).delivery(delivery.id);
+      refreshHistory();
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+        notified?'Llegada registrada. El cliente fue notificado.':'La llegada ya había sido registrada.')));
+    } catch(error) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ref.read(apiClientProvider).exception(error).message)));
+    } finally { if(mounted) setState(()=>busy=false); }
+  }
+
   @override
   Widget build(BuildContext context) {
     final next = nextStatus[delivery.status];
@@ -486,6 +500,14 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
             ),
           ] else if (next != null) ...[
             const SizedBox(height: 24),
+            if (const {'PICKED_UP','IN_TRANSIT'}.contains(delivery.status)) ...[
+              OutlinedButton.icon(
+                onPressed: busy ? null : markArrived,
+                icon: const Icon(Icons.location_on),
+                label: const Text('He llegado'),
+              ),
+              const SizedBox(height: 12),
+            ],
             FilledButton.icon(
               onPressed: busy ? null : advance,
               icon: const Icon(Icons.check_circle_outline),
@@ -614,11 +636,18 @@ class _CourierNotificationsPageState
     super.initState();
     future = ref.read(courierRepositoryProvider).notifications();
     fallbackRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) {
-        setState(
-            () => future = ref.read(courierRepositoryProvider).notifications());
-      }
+      if (mounted) reload();
     });
+  }
+
+  void reload() {
+    final next=ref.read(courierRepositoryProvider).notifications();
+    setState(() { future=next; });
+  }
+
+  Future<void> refresh() async {
+    reload();
+    await future;
   }
 
   @override
@@ -629,8 +658,7 @@ class _CourierNotificationsPageState
 
   @override
   Widget build(BuildContext context) => RefreshIndicator(
-        onRefresh: () async => setState(
-            () => future = ref.read(courierRepositoryProvider).notifications()),
+        onRefresh: refresh,
         child: FutureBuilder<List<CourierNotification>>(
           future: future,
           builder: (context, snapshot) {
@@ -647,11 +675,7 @@ class _CourierNotificationsPageState
                   const SizedBox(height: 24),
                   _CourierError(
                       message: message,
-                      onRetry: () {
-                        setState(() => future = ref
-                            .read(courierRepositoryProvider)
-                            .notifications());
-                      }),
+                      onRetry: reload),
                 ],
               );
             }
@@ -689,11 +713,7 @@ class _CourierNotificationsPageState
                                     CourierDeliveryPage(delivery: delivery),
                               ),
                             );
-                            if (mounted) {
-                              setState(() => future = ref
-                                  .read(courierRepositoryProvider)
-                                  .notifications());
-                            }
+                            if (mounted) reload();
                           } catch (error) {
                             if (!context.mounted) return;
                             final message = ref

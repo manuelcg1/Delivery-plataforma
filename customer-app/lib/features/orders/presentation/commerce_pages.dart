@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../core/providers.dart';
 import '../../../core/realtime/realtime_client.dart';
 import '../../../core/widgets/app_states.dart';
@@ -420,6 +421,16 @@ class ProductPage extends ConsumerStatefulWidget {
   ConsumerState<ProductPage> createState() => _ProductPageState();
 }
 
+class ProductAddedResult {
+  const ProductAddedResult({
+    required this.productName,
+    required this.quantity,
+  });
+
+  final String productName;
+  final int quantity;
+}
+
 class _ProductPageState extends ConsumerState<ProductPage> {
   int quantity = 1;
   bool busy = false;
@@ -483,16 +494,12 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                         );
                         ref.invalidate(cartProvider);
                         if (!context.mounted) return;
-                        showProductAddedSnackBar(
-                          messenger,
-                          productName: widget.product.name,
-                          quantity: quantity,
-                          onViewCart: () =>
-                              navigator.push(MaterialPageRoute<void>(
-                            builder: (_) => const CartPage(),
-                          )),
+                        navigator.pop(
+                          ProductAddedResult(
+                            productName: widget.product.name,
+                            quantity: quantity,
+                          ),
                         );
-                        navigator.pop();
                       } catch (error) {
                         if (context.mounted) {
                           showCartErrorSnackBar(
@@ -1165,73 +1172,232 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
   }
 
   @override
-  Widget build(BuildContext context) => ref.watch(ordersProvider).when(
-        data: (orders) {
-          if (orders.isEmpty)
-            return const EmptyState(
-              title: 'Sin pedidos',
-              message: 'Tus pedidos activos e históricos aparecerán aquí.',
-            );
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: orders
-                .map(
-                  (order) => Card(
-                    child: ListTile(
-                      title: Text(order.number),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(order.status),
-                          const SizedBox(height: 3),
-                          Text(
-                            _orderDate(order.createdAt),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          if (trackableDeliveryStatuses
-                              .contains(order.status)) ...[
-                            const SizedBox(height: 6),
-                            TextButton.icon(
-                              onPressed: () => Navigator.push(
-                                context,
-                                MaterialPageRoute<void>(
-                                  builder: (_) => CustomerOrderTrackingPage(
-                                    orderId: order.id,
-                                    orderNumber: order.number,
-                                  ),
-                                ),
-                              ),
-                              icon: const Icon(Icons.delivery_dining),
-                              label: const Text('Seguir pedido'),
+  Widget build(BuildContext context) => ColoredBox(
+        color: const Color(0xFFF8FAFC),
+        child: ref.watch(ordersProvider).when(
+              data: (orders) {
+                if (orders.isEmpty) {
+                  return const EmptyState(
+                    title: 'Sin pedidos',
+                    message:
+                        'Tus pedidos activos e históricos aparecerán aquí.',
+                  );
+                }
+                return LayoutBuilder(builder: (context, constraints) {
+                  final horizontal = constraints.maxWidth >= 700 ? 32.0 : 16.0;
+                  return _OrderListEntrance(
+                    child: ListView.separated(
+                      padding:
+                          EdgeInsets.fromLTRB(horizontal, 20, horizontal, 32),
+                      itemCount: orders.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 18),
+                      itemBuilder: (context, index) {
+                        final order = orders[index];
+                        return OrderCard(
+                          order: order,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => OrderDetailPage(order: order),
                             ),
-                          ],
-                        ],
-                      ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                              '${order.currency} ${order.total.toStringAsFixed(2)}'),
-                          if (order.status == 'DELIVERED')
-                            const Text('Entregado',
-                                style: TextStyle(color: Colors.green)),
-                        ],
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute<void>(
-                          builder: (_) => OrderDetailPage(order: order),
-                        ),
-                      ),
+                          ),
+                          onTrack: trackableDeliveryStatuses
+                                  .contains(order.status)
+                              ? () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => CustomerOrderTrackingPage(
+                                        orderId: order.id,
+                                        orderNumber: order.number,
+                                      ),
+                                    ),
+                                  )
+                              : null,
+                        );
+                      },
+                    ),
+                  );
+                });
+              },
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: Color(0xFFFF7C00)),
+              ),
+              error: (error, _) => ErrorState(message: error.toString()),
+            ),
+      );
+}
+
+class _OrderListEntrance extends StatelessWidget {
+  const _OrderListEntrance({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        tween: Tween(begin: 0, end: 1),
+        child: child,
+        builder: (context, value, child) => Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 14 * (1 - value)),
+            child: child,
+          ),
+        ),
+      );
+}
+
+class OrderCard extends StatelessWidget {
+  const OrderCard({
+    super.key,
+    required this.order,
+    required this.onTap,
+    this.onTrack,
+  });
+
+  final Order order;
+  final VoidCallback onTap;
+  final VoidCallback? onTrack;
+
+  @override
+  Widget build(BuildContext context) {
+    final delivered = order.status == 'DELIVERED';
+    return Semantics(
+      button: true,
+      label: 'Pedido ${order.number}, ${_deliveryStatusLabel(order.status)}, '
+          '${order.currency} ${order.total.toStringAsFixed(2)}',
+      child: TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 80),
+        tween: Tween(begin: 0, end: 1),
+        builder: (context, value, child) =>
+            Opacity(opacity: value, child: child),
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 112),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x140F172A),
+                    blurRadius: 18,
+                    offset: Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: LayoutBuilder(builder: (context, constraints) {
+                final compact = constraints.maxWidth < 330;
+                return Row(children: [
+                  Container(
+                    width: compact ? 50 : 60,
+                    height: compact ? 50 : 60,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Icon(Icons.shopping_bag_outlined,
+                        color: Color(0xFFFF7C00), size: 30),
+                  ),
+                  SizedBox(width: compact ? 8 : 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(order.number,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              color: const Color(0xFF111827),
+                              fontSize: compact ? 14 : 17,
+                              height: 1.15,
+                              fontWeight: FontWeight.w600,
+                            )),
+                        const SizedBox(height: 4),
+                        _OrderStatusBadge(
+                            status: order.status, delivered: delivered),
+                        const SizedBox(height: 4),
+                        Text(_orderDate(order.createdAt),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              color: const Color(0xFF6B7280),
+                              fontSize: compact ? 11 : 15,
+                            )),
+                        if (onTrack != null)
+                          TextButton.icon(
+                            onPressed: onTrack,
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                              padding: EdgeInsets.zero,
+                              foregroundColor: const Color(0xFFFF7C00),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.delivery_dining, size: 18),
+                            label: Text('Seguir pedido',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                )),
+                          ),
+                      ],
                     ),
                   ),
-                )
-                .toList(),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ErrorState(message: e.toString()),
+                  SizedBox(width: compact ? 6 : 10),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(order.currency,
+                          style: GoogleFonts.poppins(
+                              color: const Color(0xFF6B7280), fontSize: 11)),
+                      Text(order.total.toStringAsFixed(2),
+                          style: GoogleFonts.poppins(
+                            color: const Color(0xFF111827),
+                            fontSize: compact ? 16 : 19,
+                            fontWeight: FontWeight.w700,
+                          )),
+                    ],
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right_rounded,
+                      color: Color(0xFF9CA3AF)),
+                ]);
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderStatusBadge extends StatelessWidget {
+  const _OrderStatusBadge({required this.status, required this.delivered});
+  final String status;
+  final bool delivered;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: delivered ? const Color(0xFFDCFCE7) : const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Text(_deliveryStatusLabel(status),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.poppins(
+              color:
+                  delivered ? const Color(0xFF16A34A) : const Color(0xFFF97316),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            )),
       );
 }
 

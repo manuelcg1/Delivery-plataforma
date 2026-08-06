@@ -55,6 +55,17 @@ class _CustomerOrderTrackingPageState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<CustomerTrackingState>(
+      customerOrderTrackingControllerProvider(widget.orderId),
+      (previous,next) {
+        if(next.arrivalNoticeId!=null && next.arrivalNoticeId!=previous?.arrivalNoticeId) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text('Tu repartidor llegó.'),
+            action: SnackBarAction(label:'Ver pedido',onPressed:() {}),
+          ));
+        }
+      },
+    );
     final state =
         ref.watch(customerOrderTrackingControllerProvider(widget.orderId));
     final location = state.tracking?.location;
@@ -221,8 +232,11 @@ class CustomerTrackingStatusPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final tracking = state.tracking;
     final delivered = tracking?.deliveryStatus == 'DELIVERED';
+    final arrived = tracking?.deliveryStatus == 'ARRIVED_AT_CUSTOMER';
     final (icon, color, title) = delivered
         ? (Icons.check_circle, Colors.green, 'Pedido entregado')
+        : arrived
+            ? (Icons.location_on, Colors.green, 'Tu repartidor llegó')
         : !state.trackingActive
             ? (
                 Icons.stop_circle_outlined,

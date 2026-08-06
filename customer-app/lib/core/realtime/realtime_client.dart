@@ -93,7 +93,8 @@ class RealtimeClient {
       throw StateError('Sesión no disponible');
     final headers = {'Authorization': 'Bearer $token'};
     _states.add(RealtimeConnectionState.connecting);
-    _client = StompClient(
+    late final StompClient connection;
+    connection = StompClient(
       config: StompConfig(
         url: url,
         stompConnectHeaders: headers,
@@ -102,6 +103,7 @@ class RealtimeClient {
         heartbeatIncoming: const Duration(seconds: 10),
         heartbeatOutgoing: const Duration(seconds: 10),
         onConnect: (_) {
+          if (!identical(_client, connection)) return;
           _connected = true;
           _reconnectAttempt = 0;
           _states.add(RealtimeConnectionState.connected);
@@ -112,26 +114,32 @@ class RealtimeClient {
           }
         },
         onWebSocketDone: () {
+          if (!identical(_client, connection)) return;
           _connected = false;
+          _client = null;
           _unsubscribers.clear();
           _states.add(RealtimeConnectionState.disconnected);
           _scheduleReconnect();
         },
         onWebSocketError: (_) {
+          if (!identical(_client, connection)) return;
           _connected = false;
+          _client = null;
           _states.add(RealtimeConnectionState.error);
           _scheduleReconnect();
         },
         onStompError: (_) => _states.add(RealtimeConnectionState.error),
       ),
-    )..activate();
+    );
+    _client=connection;
+    connection.activate();
   }
 
   void _scheduleReconnect() {
     if (_manualDisconnect || _destinations.isEmpty || _reconnectTimer != null) {
       return;
     }
-    const delays = [2, 5, 10, 30];
+    const delays = [1, 2, 5, 10, 30];
     final delay = delays[math.min(_reconnectAttempt, delays.length - 1)];
     _reconnectAttempt++;
     _client = null;
@@ -149,8 +157,9 @@ class RealtimeClient {
   }
 
   void _subscribeKey(String key, String destination) {
-    if (!_connected || _unsubscribers.containsKey(key)) return;
-    _unsubscribers[key] = _client!.subscribe(
+    final connection=_client;
+    if (!_connected || connection==null || _unsubscribers.containsKey(key)) return;
+    _unsubscribers[key] = connection.subscribe(
       destination: destination,
       callback: (frame) {
         if (frame.body == null || !_destinations.containsKey(key)) return;
@@ -177,6 +186,20 @@ class RealtimeClient {
     _connected = false;
     _unsubscribers.clear();
     _manualDisconnect = false;
+  }
+
+  Future<void> reconnect() async {
+    if(_destinations.isEmpty) return;
+    _manualDisconnect=true;
+    _reconnectTimer?.cancel();
+    _reconnectTimer=null;
+    final stale=_client;
+    _client=null;
+    _connected=false;
+    _unsubscribers.clear();
+    stale?.deactivate();
+    _manualDisconnect=false;
+    await _ensureConnected();
   }
 
   Future<void> dispose() async {

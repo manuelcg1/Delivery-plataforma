@@ -149,6 +149,11 @@ class CourierRepository {
     return CourierDelivery.fromJson(response.data!);
   }
 
+  Future<bool> markArrived(String orderId) async {
+    final response=await api.dio.post<Map<String,dynamic>>('/api/v1/orders/$orderId/arrival');
+    return response.data?['notified']==true;
+  }
+
   Future<List<CourierDeliveryHistory>> history(String id) async {
     final response =
         await api.dio.get<List<dynamic>>('/api/v1/deliveries/$id/history');

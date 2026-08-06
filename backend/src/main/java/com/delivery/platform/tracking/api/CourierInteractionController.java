@@ -23,9 +23,17 @@ public class CourierInteractionController {
     public record ChatRequest(UUID deliveryId, @NotBlank String channel, @NotBlank @Size(max = 1000) String message) {}
 
     private final CourierInteractionService service;
+    private final com.delivery.platform.tracking.application.CourierArrivalDetectionService arrivals;
 
-    public CourierInteractionController(CourierInteractionService service) {
+    public CourierInteractionController(CourierInteractionService service, com.delivery.platform.tracking.application.CourierArrivalDetectionService arrivals) {
         this.service = service;
+        this.arrivals = arrivals;
+    }
+
+    @PostMapping("/orders/{id}/arrival")
+    @PreAuthorize("hasAuthority('COURIER_LOCATION_UPDATE')")
+    Map<String,Object> arrived(@AuthenticationPrincipal IdentityPrincipal principal,@PathVariable UUID id) {
+        return Map.of("status","ARRIVED_AT_CUSTOMER","notified",arrivals.manual(principal,id));
     }
 
     @PostMapping(value = "/orders/{id}/proof", consumes = "multipart/form-data")

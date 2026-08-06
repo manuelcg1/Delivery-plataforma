@@ -1,20 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../core/providers.dart';
 import '../core/widgets/app_states.dart';
 import '../features/auth/presentation/auth_controller.dart';
 import '../features/auth/presentation/auth_page.dart';
 import '../features/courier/presentation/courier_pages.dart';
+import '../features/courier/notifications/courier_notification_service.dart';
+import '../features/courier/data/courier_repository.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/orders/presentation/commerce_pages.dart';
 import 'theme/app_theme.dart';
+import '../core/lifecycle/app_lifecycle_coordinator.dart';
 
 class CustomerApp extends ConsumerWidget {
   const CustomerApp({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(authControllerProvider);
-    return MaterialApp(
+    final connection=ref.watch(appConnectionStatusProvider);
+    ref.listen(authControllerProvider,(previous,next) {
+      if(previous?.value==null && next.value!=null) {
+        ref.read(appLifecycleCoordinatorProvider).recover();
+      }
+    });
+    return AppLifecycleCoordinatorHost(child: MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Delivery',
       theme: AppTheme.light(),
@@ -27,7 +37,13 @@ class CustomerApp extends ConsumerWidget {
         loading: () => const SplashPage(),
         error: (_, __) => const AuthPage(),
       ),
-    );
+      builder:(context,child)=>Column(children:[
+        if(session.value!=null && connection!=AppConnectionStatus.online &&
+            connection!=AppConnectionStatus.checking)
+          _ConnectionBanner(status:connection),
+        Expanded(child:child??const SizedBox.shrink()),
+      ]),
+    ));
   }
 }
 
@@ -55,6 +71,7 @@ class MainShell extends ConsumerStatefulWidget {
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
+  CourierNotificationService? notifications;
   final pages = const [
     HomePage(),
     SearchPage(),
@@ -63,14 +80,39 @@ class _MainShellState extends ConsumerState<MainShell> {
     ProfilePage(),
   ];
   @override
+  void initState() {
+    super.initState();
+    Future.microtask(() async {
+      final api=ref.read(apiClientProvider);
+      notifications=CourierNotificationService(api,CourierRepository(api),
+        onOpenDelivery: (_) async {
+          if(mounted) ref.read(customerMainTabProvider.notifier).state=2;
+        });
+      await notifications!.initialize();
+    });
+  }
+
+  @override
+  void dispose() {
+    notifications?.dispose();
+    super.dispose();
+  }
+  @override
   Widget build(BuildContext context) {
     final index = ref.watch(customerMainTabProvider);
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: IndexedStack(index: index, children: pages),
       ),
       floatingActionButton: index == 0
           ? FloatingActionButton(
+              backgroundColor: const Color(0xFFFF7C00),
+              foregroundColor: Colors.white,
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(builder: (_) => const CartPage()),
@@ -78,32 +120,93 @@ class _MainShellState extends ConsumerState<MainShell> {
               child: const Icon(Icons.shopping_cart_outlined),
             )
           : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (value) =>
-            ref.read(customerMainTabProvider.notifier).state = value,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Inicio',
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      bottomNavigationBar: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x140F172A),
+              blurRadius: 22,
+              offset: Offset(0, -5),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          child: NavigationBarTheme(
+            data: NavigationBarThemeData(
+              backgroundColor: Colors.white,
+              indicatorColor: const Color(0xFFFFF4E8),
+              elevation: 0,
+              height: 76,
+              iconTheme:
+                  WidgetStateProperty.resolveWith((states) => IconThemeData(
+                        color: states.contains(WidgetState.selected)
+                            ? const Color(0xFFFF7C00)
+                            : const Color(0xFF6B7280),
+                        size: 27,
+                      )),
+              labelTextStyle: WidgetStateProperty.resolveWith(
+                (states) => GoogleFonts.poppins(
+                  color: states.contains(WidgetState.selected)
+                      ? const Color(0xFFFF7C00)
+                      : const Color(0xFF6B7280),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            child: NavigationBar(
+              selectedIndex: index,
+              onDestinationSelected: (value) =>
+                  ref.read(customerMainTabProvider.notifier).state = value,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home_rounded),
+                  label: 'Inicio',
+                ),
+                NavigationDestination(
+                    icon: Icon(Icons.search_rounded), label: 'Buscar'),
+                NavigationDestination(
+                  icon: Icon(Icons.receipt_long_outlined),
+                  label: 'Pedidos',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.favorite_border_rounded),
+                  selectedIcon: Icon(Icons.favorite_rounded),
+                  label: 'Favoritos',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline_rounded),
+                  selectedIcon: Icon(Icons.person_rounded),
+                  label: 'Perfil',
+                ),
+              ],
+            ),
           ),
-          NavigationDestination(icon: Icon(Icons.search), label: 'Buscar'),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            label: 'Pedidos',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border),
-            label: 'Favoritos',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            label: 'Perfil',
-          ),
-        ],
+        ),
       ),
     );
+  }
+}
+
+class _ConnectionBanner extends StatelessWidget {
+  const _ConnectionBanner({required this.status});
+  final AppConnectionStatus status;
+  @override Widget build(BuildContext context) {
+    final message=switch(status) {
+      AppConnectionStatus.checking=>'Comprobando conexión…',
+      AppConnectionStatus.offline=>'Sin conexión a Internet.',
+      AppConnectionStatus.backendUnavailable=>'No pudimos conectar con Cerka. Intenta nuevamente.',
+      AppConnectionStatus.sessionExpired=>'Tu sesión expiró. Inicia sesión nuevamente.',
+      AppConnectionStatus.realtimeDisconnected=>'Reconectando seguimiento…',
+      AppConnectionStatus.online=>'',
+    };
+    return Material(color:const Color(0xFFFFF3CD),child:SafeArea(bottom:false,child:
+      Padding(padding:const EdgeInsets.symmetric(horizontal:16,vertical:8),child:Text(message,textAlign:TextAlign.center))));
   }
 }
 

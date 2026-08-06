@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import java.util.*;
 
@@ -21,20 +22,21 @@ public class CourierNotificationService {
     private final JdbcClient db;
     private final RealtimeGateway realtime;
     private final ApplicationEventPublisher events;
+    private final MeterRegistry metrics;
 
     public record PushDispatch(UUID tenant, UUID user, String eventId, Map<String, Object> payload) {}
 
-    public CourierNotificationService(JdbcClient db, RealtimeGateway realtime, ApplicationEventPublisher events) {
+    public CourierNotificationService(JdbcClient db, RealtimeGateway realtime, ApplicationEventPublisher events, MeterRegistry metrics) {
         this.db = db;
         this.realtime = realtime;
         this.events = events;
+        this.metrics = metrics;
     }
 
     @Transactional
     public void register(IdentityPrincipal principal, String token, String platform) {
         UUID courier = db.sql("select id from courier_profiles where tenant_id=:t and user_id=:u")
-            .param("t", principal.tenantId()).param("u", principal.userId()).query(UUID.class).optional()
-            .orElseThrow(() -> new IllegalStateException("Courier profile required"));
+            .param("t", principal.tenantId()).param("u", principal.userId()).query(UUID.class).optional().orElse(null);
         db.sql("""
           insert into device_tokens(tenant_id,user_id,courier_id,token,platform)
           values(:t,:u,:c,:token,:platform)
@@ -42,6 +44,31 @@ public class CourierNotificationService {
             platform=excluded.platform,active=true,last_seen_at=now()
           """).param("t",principal.tenantId()).param("u",principal.userId()).param("c",courier)
           .param("token",token).param("platform",platform).update();
+    }
+
+    @Transactional
+    public void arrival(CourierArrivalEvent arrival) {
+        String key="COURIER_ARRIVED:"+arrival.deliveryId();
+        int inserted=db.sql("""
+          insert into notifications(tenant_id,user_id,delivery_id,event_type,title,body,channel,status,deduplication_key)
+          values(:t,:u,:d,'COURIER_ARRIVED','¡Llegó tu pedido!',
+            'Tu repartidor ya se encuentra en el punto de entrega.','FCM','PENDING',:key)
+          on conflict(tenant_id,user_id,deduplication_key) where deduplication_key is not null do nothing
+          """).param("t",arrival.tenantId()).param("u",arrival.customerId()).param("d",arrival.deliveryId())
+          .param("key",key).update();
+        if(inserted==0) return;
+        Map<String,Object> payload=new HashMap<>();
+        payload.put("type","COURIER_ARRIVED"); payload.put("orderId",arrival.orderId());
+        payload.put("deliveryId",arrival.deliveryId()); payload.put("status","ARRIVED_AT_CUSTOMER");
+        payload.put("deliveryStatus","ARRIVED_AT_CUSTOMER");
+        payload.put("route","/orders/"+arrival.orderId()); payload.put("title","¡Llegó tu pedido!");
+        payload.put("body","Tu repartidor ya se encuentra en el punto de entrega.");
+        payload.put("distanceMeters",arrival.distanceMeters()==null?"":arrival.distanceMeters());
+        payload.put("detectedAt",arrival.detectedAt()); payload.put("message","Tu repartidor llegó.");
+        realtime.customerOrder(arrival.customerId(),arrival.orderId(),payload);
+        events.publishEvent(new PushDispatch(arrival.tenantId(),arrival.customerId(),key,payload));
+        db.sql("update deliveries set arrival_notified_at=now() where tenant_id=:t and id=:d and arrival_notified_at is null")
+          .param("t",arrival.tenantId()).param("d",arrival.deliveryId()).update();
     }
 
     @Transactional
@@ -108,6 +135,23 @@ public class CourierNotificationService {
             retryPayload.put("eventId",eventId);
             events.publishEvent(new PushDispatch((UUID)row[0],(UUID)row[1],eventId,retryPayload));
         }
+
+        List<Object[]> arrivalRetries=db.sql("""
+          select n.tenant_id,n.user_id,n.delivery_id,d.order_id,n.deduplication_key
+          from notifications n join deliveries d on d.id=n.delivery_id and d.tenant_id=n.tenant_id
+          where n.event_type='COURIER_ARRIVED' and n.status='FAILED' and n.attempt_count<5
+            and n.last_attempt_at<now()-interval '30 seconds'
+          for update of n skip locked
+          """).query((r,n)->new Object[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class),
+            r.getObject(3,UUID.class),r.getObject(4,UUID.class),r.getString(5)}).list();
+        for(Object[] row:arrivalRetries) {
+            Map<String,Object> retry=new HashMap<>();
+            retry.put("type","COURIER_ARRIVED"); retry.put("deliveryId",row[2]); retry.put("orderId",row[3]);
+            retry.put("status","ARRIVED_AT_CUSTOMER"); retry.put("deliveryStatus","ARRIVED_AT_CUSTOMER");
+            retry.put("route","/orders/"+row[3]); retry.put("title","¡Llegó tu pedido!");
+            retry.put("body","Tu repartidor ya se encuentra en el punto de entrega.");
+            events.publishEvent(new PushDispatch((UUID)row[0],(UUID)row[1],(String)row[4],retry));
+        }
     }
 
     private List<Object[]> assignmentRows(String condition) {
@@ -149,6 +193,7 @@ public class CourierNotificationService {
         FirebaseMessaging messaging;
         try { messaging=FirebaseMessaging.getInstance(); } catch (IllegalStateException unavailable) {
             markFailed(tenant,user,eventId);
+            if(eventId.startsWith("COURIER_ARRIVED:")) metrics.counter("courier_arrival_push_failed_total").increment();
             log.warn("Firebase is not configured; event {} remains eligible for retry",eventId);
             return;
         }
@@ -156,6 +201,7 @@ public class CourierNotificationService {
           .param("t",tenant).param("u",user).query(String.class).list();
         if(tokens.isEmpty()) {
             markFailed(tenant,user,eventId);
+            if(eventId.startsWith("COURIER_ARRIVED:")) metrics.counter("courier_arrival_push_failed_total").increment();
             log.warn("No active device token tenant={} user={} event={}",tenant,user,eventId);
             return;
         }
@@ -163,11 +209,17 @@ public class CourierNotificationService {
             Map<String,String> data=new HashMap<>(); values.forEach((k,v)->data.put(k,Objects.toString(v,"")));
             data.put("eventId",eventId);
             Message message=Message.builder().setToken(token).putAllData(data)
-              .setAndroidConfig(AndroidConfig.builder().setPriority(AndroidConfig.Priority.HIGH).setTtl(900_000L).build())
+              .setNotification(Notification.builder().setTitle(Objects.toString(values.get("title"),"Cerka"))
+                .setBody(Objects.toString(values.get("body"),"")).build())
+              .setAndroidConfig(AndroidConfig.builder().setPriority(AndroidConfig.Priority.HIGH).setTtl(900_000L)
+                .setNotification(AndroidNotification.builder().setChannelId(
+                  "COURIER_ARRIVED".equals(values.get("type"))?"CERKA_ORDER_ARRIVAL":"CERKA_NEW_DELIVERY")
+                  .setSound("default").setDefaultVibrateTimings(true).build()).build())
               .setApnsConfig(ApnsConfig.builder().putHeader("apns-priority","10")
                 .setAps(Aps.builder().setContentAvailable(true).build()).build()).build();
             messaging.send(message);
             log.info("Push delivered tenant={} user={} event={}",tenant,user,eventId);
+            if(eventId.startsWith("COURIER_ARRIVED:")) metrics.counter("courier_arrival_push_sent_total").increment();
             db.sql("update notifications set status='SENT',sent_at=now() where tenant_id=:t and user_id=:u and deduplication_key=:k")
               .param("t",tenant).param("u",user).param("k",eventId).update();
         } catch (FirebaseMessagingException error) {
@@ -175,9 +227,11 @@ public class CourierNotificationService {
                 db.sql("update device_tokens set active=false where tenant_id=:t and token=:token")
                   .param("t",tenant).param("token",token).update();
             markFailed(tenant,user,eventId);
+            if(eventId.startsWith("COURIER_ARRIVED:")) metrics.counter("courier_arrival_push_failed_total").increment();
             log.warn("FCM dispatch failed tenant={} user={} event={} code={}",tenant,user,eventId,error.getMessagingErrorCode());
         } catch (RuntimeException error) {
             markFailed(tenant,user,eventId);
+            if(eventId.startsWith("COURIER_ARRIVED:")) metrics.counter("courier_arrival_push_failed_total").increment();
             log.error("Unexpected FCM dispatch failure tenant={} user={} event={}",tenant,user,eventId,error);
         }
     }

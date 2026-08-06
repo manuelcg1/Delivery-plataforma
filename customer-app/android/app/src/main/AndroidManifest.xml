@@ -13,7 +13,7 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">
-        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="CERKA_NEW_DELIVERY" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="CERKA_ORDER_ARRIVAL" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

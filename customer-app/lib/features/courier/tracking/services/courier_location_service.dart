@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../data/courier_tracking_repository.dart';
 import '../domain/courier_location_update.dart';
+import '../../../../core/errors/app_exception.dart';
 
 class CourierTrackingConfig {
   static const interval = Duration(seconds: 10);
@@ -236,11 +237,14 @@ class CourierLocationService implements CourierLocationServiceContract {
             sentAt: _lastSentAt,
           ));
         } catch (error) {
+          final offline=error is AppException && const {
+            'NETWORK_UNAVAILABLE','NETWORK_TIMEOUT'
+          }.contains(error.code);
           _events.add(CourierLocationEvent(
-            CourierLocationEventType.offline,
+            offline ? CourierLocationEventType.offline : CourierLocationEventType.error,
             message: error.toString(),
           ));
-          _scheduleRetry();
+          if(offline) _scheduleRetry();
           break;
         }
       }

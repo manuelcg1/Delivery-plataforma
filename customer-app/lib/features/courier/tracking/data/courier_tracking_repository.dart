@@ -32,7 +32,8 @@ class CourierTrackingRepository {
       };
       final parsed = api.exception(error);
       throw AppException(
-        parsed.code == 'NETWORK_ERROR' ? fallback : parsed.message,
+        const {'NETWORK_UNAVAILABLE','NETWORK_TIMEOUT'}.contains(parsed.code)
+            ? fallback : parsed.message,
         code: parsed.code,
       );
     }
