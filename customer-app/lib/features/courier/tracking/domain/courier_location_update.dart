@@ -1,5 +1,6 @@
 class CourierLocationUpdate {
   const CourierLocationUpdate({
+    required this.deliveryId,
     required this.latitude,
     required this.longitude,
     required this.accuracy,
@@ -11,6 +12,7 @@ class CourierLocationUpdate {
     this.batteryLevel,
   });
 
+  final String deliveryId;
   final double latitude;
   final double longitude;
   final double? speed;
@@ -33,6 +35,7 @@ class CourierLocationUpdate {
       gpsTimestamp.millisecondsSinceEpoch > 0;
 
   Map<String, dynamic> toJson() => {
+        'deliveryId': deliveryId,
         'latitude': latitude,
         'longitude': longitude,
         if (speed != null) 'speed': speed,

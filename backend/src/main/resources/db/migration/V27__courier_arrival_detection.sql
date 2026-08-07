@@ -12,4 +12,3 @@ ALTER TABLE deliveries
 CREATE INDEX idx_deliveries_arrival_pending
   ON deliveries(tenant_id,courier_id,status)
   WHERE arrival_detected_at IS NULL AND status IN ('PICKED_UP','IN_TRANSIT');
-

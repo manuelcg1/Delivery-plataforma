@@ -75,9 +75,9 @@ public class CourierArrivalDetectionService {
                 enteredAt=point.gpsTimestamp();
             } else countingConsecutive=false;
         }
-        boolean confirmed=consecutive>=requiredPoints || (enteredAt!=null && Duration.between(enteredAt,gpsTimestamp).getSeconds()>=dwellSeconds);
+        boolean confirmed=meetsConfirmation(consecutive,requiredPoints,enteredAt,gpsTimestamp,dwellSeconds);
         if (!confirmed) return false;
-        return confirm(tenantId,deliveryId,courierId,locationId,candidate,distance,"GEOFENCE");
+        return confirm(tenantId,deliveryId,courierId,locationId,candidate,distance,accuracy,"AUTOMATIC");
     }
 
     @Transactional
@@ -90,10 +90,10 @@ public class CourierArrivalDetectionService {
             """).param("t",principal.tenantId()).param("o",orderId).param("u",principal.userId())
             .query((r,n)->new Object[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getObject(3,UUID.class),r.getObject(4,UUID.class),r.getString(5)})
             .optional().orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND,"DELIVERY_NOT_FOUND","Entrega activa no encontrada"));
-        if (!List.of("PICKED_UP","IN_TRANSIT","ARRIVED_AT_CUSTOMER").contains(row[4]))
+        if (!List.of("IN_TRANSIT","ARRIVED_AT_CUSTOMER").contains(row[4]))
             throw new ApiException(HttpStatus.CONFLICT,"DELIVERY_NOT_ACTIVE","La entrega no permite registrar llegada");
         Candidate candidate=new Candidate((UUID)row[1],(UUID)row[2],(String)row[4],null,null);
-        return confirm(principal.tenantId(),(UUID)row[0],(UUID)row[3],null,candidate,Double.NaN,"MANUAL");
+        return confirm(principal.tenantId(),(UUID)row[0],(UUID)row[3],null,candidate,Double.NaN,null,"MANUAL");
     }
 
     private Candidate candidate(UUID tenant,UUID delivery,UUID courier) {
@@ -101,20 +101,20 @@ public class CourierArrivalDetectionService {
             select d.order_id,d.customer_id,d.status,o.delivery_latitude,o.delivery_longitude
             from deliveries d join orders o on o.id=d.order_id and o.tenant_id=d.tenant_id
             where d.tenant_id=:t and d.id=:d and d.courier_id=:c
-              and d.status in ('PICKED_UP','IN_TRANSIT') and d.arrival_detected_at is null
+              and d.status='IN_TRANSIT' and d.arrival_detected_at is null
             for update of d
             """).param("t",tenant).param("d",delivery).param("c",courier)
             .query((r,n)->new Candidate(r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getString(3),r.getBigDecimal(4),r.getBigDecimal(5)))
             .optional().orElse(null);
     }
 
-    private boolean confirm(UUID tenant,UUID delivery,UUID courier,UUID location,Candidate c,double distance,String method) {
+    private boolean confirm(UUID tenant,UUID delivery,UUID courier,UUID location,Candidate c,double distance,BigDecimal accuracy,String method) {
         BigDecimal meters=Double.isNaN(distance)?null:BigDecimal.valueOf(distance).setScale(2,RoundingMode.HALF_UP);
         int changed=db.sql("""
             update deliveries set status='ARRIVED_AT_CUSTOMER',arrival_detected_at=now(),arrival_distance_meters=:distance,
               arrival_method=:method,arrival_location_id=:location,version=version+1,updated_at=now()
             where tenant_id=:t and id=:d and courier_id=:c and arrival_detected_at is null
-              and status in ('PICKED_UP','IN_TRANSIT')
+              and status='IN_TRANSIT'
             """).param("distance",meters).param("method",method).param("location",location)
             .param("t",tenant).param("d",delivery).param("c",courier).update();
         if(changed==0) return false;
@@ -124,6 +124,14 @@ public class CourierArrivalDetectionService {
         db.sql("insert into tracking_events(tenant_id,delivery_id,courier_id,event_type,payload) values(:t,:d,:c,'CourierArrived',cast(:payload as jsonb))")
             .param("t",tenant).param("d",delivery).param("c",courier).param("payload","{\"method\":\""+method+"\"}").update();
         Instant detected=Instant.now();
+        db.sql("""
+            insert into courier_arrival_audit(tenant_id,delivery_id,order_id,courier_id,latitude,longitude,
+              distance_meters,accuracy_meters,arrival_method,detected_at)
+            select :t,:d,:o,:c,h.latitude,h.longitude,:distance,:accuracy,:method,:detected
+            from (select 1) seed left join courier_location_history h on h.id=:location and h.tenant_id=:t
+            """).param("t",tenant).param("d",delivery).param("o",c.orderId()).param("c",courier)
+            .param("distance",meters).param("accuracy",accuracy).param("method",method)
+            .param("detected",Timestamp.from(detected)).param("location",location).update();
         events.publishEvent(new CourierArrivalEvent(tenant,delivery,c.orderId(),c.customerId(),courier,meters,detected,method));
         metrics.counter(method.equals("MANUAL")?"courier_arrival_manual_total":"courier_arrival_detected_total").increment();
         log.info("Courier arrival deliveryId={} courierId={} distance={} method={} result=confirmed",delivery,courier,meters,method);
@@ -134,6 +142,10 @@ public class CourierArrivalDetectionService {
         return lat!=null&&lon!=null&&accuracy!=null&&timestamp!=null&&lat.abs().doubleValue()<=90&&lon.abs().doubleValue()<=180
             &&accuracy.doubleValue()<=maxAccuracy&&!timestamp.isBefore(Instant.now().minusSeconds(maxAgeSeconds))
             &&!timestamp.isAfter(Instant.now().plusSeconds(30));
+    }
+    static boolean meetsConfirmation(int consecutive,int required,Instant enteredAt,Instant now,long dwellSeconds) {
+        return consecutive>=required && enteredAt!=null
+            && Duration.between(enteredAt,now).getSeconds()>=dwellSeconds;
     }
     static double meters(BigDecimal lat1,BigDecimal lon1,BigDecimal lat2,BigDecimal lon2) {
         double p1=Math.toRadians(lat1.doubleValue()),p2=Math.toRadians(lat2.doubleValue());

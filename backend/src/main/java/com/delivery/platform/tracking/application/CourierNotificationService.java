@@ -61,13 +61,26 @@ public class CourierNotificationService {
         payload.put("type","COURIER_ARRIVED"); payload.put("orderId",arrival.orderId());
         payload.put("deliveryId",arrival.deliveryId()); payload.put("status","ARRIVED_AT_CUSTOMER");
         payload.put("deliveryStatus","ARRIVED_AT_CUSTOMER");
+        payload.put("eventId",key);
         payload.put("route","/orders/"+arrival.orderId()); payload.put("title","¡Llegó tu pedido!");
         payload.put("body","Tu repartidor ya se encuentra en el punto de entrega.");
         payload.put("distanceMeters",arrival.distanceMeters()==null?"":arrival.distanceMeters());
-        payload.put("detectedAt",arrival.detectedAt()); payload.put("message","Tu repartidor llegó.");
+        payload.put("detectedAt",arrival.detectedAt()); payload.put("publishedAt",java.time.Instant.now());
+        payload.put("message","Tu repartidor llegó.");
         realtime.customerOrder(arrival.customerId(),arrival.orderId(),payload);
+        Object[] audience=db.sql("""
+          select d.merchant_id,cp.user_id from deliveries d
+          join courier_profiles cp on cp.id=d.courier_id and cp.tenant_id=d.tenant_id
+          where d.tenant_id=:t and d.id=:d
+          """).param("t",arrival.tenantId()).param("d",arrival.deliveryId())
+          .query((r,n)->new Object[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class)}).single();
+        realtime.tenant(arrival.tenantId(),"courier/"+audience[1],"COURIER_ARRIVED",payload);
+        realtime.tenant(arrival.tenantId(),"merchant/"+audience[0],"COURIER_ARRIVED",payload);
+        realtime.tenant(arrival.tenantId(),"admin","COURIER_ARRIVED",payload);
         events.publishEvent(new PushDispatch(arrival.tenantId(),arrival.customerId(),key,payload));
         db.sql("update deliveries set arrival_notified_at=now() where tenant_id=:t and id=:d and arrival_notified_at is null")
+          .param("t",arrival.tenantId()).param("d",arrival.deliveryId()).update();
+        db.sql("update courier_arrival_audit set notified_at=now() where tenant_id=:t and delivery_id=:d and notified_at is null")
           .param("t",arrival.tenantId()).param("d",arrival.deliveryId()).update();
     }
 

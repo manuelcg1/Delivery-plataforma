@@ -101,7 +101,7 @@ class CourierTrackingController extends Notifier<CourierTrackingState> {
     String? deliveryId,
     String status = 'PICKED_UP',
   }) async {
-    if (_service.isActive) {
+    if (_service.isActive && _deliveryId == deliveryId) {
       state = TrackingActive(
         lastSentAt: state is TrackingActive
             ? (state as TrackingActive).lastSentAt
@@ -109,6 +109,7 @@ class CourierTrackingController extends Notifier<CourierTrackingState> {
       );
       return true;
     }
+    if (_service.isActive) await stopTracking();
     final currentStart = _startOperation;
     if (currentStart != null) return currentStart;
     final operation = _startTracking(deliveryId: deliveryId, status: status);
@@ -142,11 +143,15 @@ class CourierTrackingController extends Notifier<CourierTrackingState> {
     }
     state = const TrackingStarting();
     try {
+      if (deliveryId == null || deliveryId.isEmpty) {
+        state = const TrackingError('No se pudo asociar el GPS a una entrega.');
+        return false;
+      }
       _deliveryId = deliveryId;
       _status = status;
       await _events?.cancel();
       _events = _service.events.listen(_onEvent);
-      final started = await _service.start();
+      final started = await _service.start(deliveryId: deliveryId);
       if (!started) {
         state = const TrackingError('No se pudo iniciar el GPS.');
         return false;
@@ -211,11 +216,17 @@ class CourierTrackingController extends Notifier<CourierTrackingState> {
   }
 
   Future<void> restoreFromBackend(List<CourierDelivery> deliveries) async {
-    final active = deliveries
-        .where((delivery) => shouldContinueTracking(delivery.status))
-        .firstOrNull;
+    final trackable = deliveries
+        .where((delivery) => shouldContinueTracking(delivery.status)).toList();
+    final preferences = await SharedPreferences.getInstance();
+    final persistedId = preferences.getString('courier.deliveryId');
+    final persisted = trackable.where((delivery) => delivery.id == persistedId).firstOrNull;
+    final active = persisted ?? (trackable.length == 1 ? trackable.single : null);
     if (active == null) {
       if (_service.isActive) await stopTracking();
+      if (trackable.length > 1) {
+        state = const TrackingError('Selecciona una entrega para compartir su ubicación.');
+      }
       return;
     }
     await startTracking(deliveryId: active.id, status: active.status);

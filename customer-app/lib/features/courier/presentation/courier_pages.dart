@@ -315,7 +315,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
     'ASSIGNED': 'ACCEPTED',
     'ACCEPTED': 'PICKED_UP',
     'PICKED_UP': 'IN_TRANSIT',
-    'IN_TRANSIT': 'DELIVERED',
+    'ARRIVED_AT_CUSTOMER': 'DELIVERED',
   };
 
   @override
@@ -326,6 +326,20 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
 
   void refreshHistory() =>
       history = ref.read(courierRepositoryProvider).history(delivery.id);
+
+  Future<void> refreshDelivery() async {
+    final updated = await ref.read(courierRepositoryProvider).delivery(delivery.id);
+    if (!mounted || updated.status == delivery.status) return;
+    setState(() {
+      delivery = updated;
+      refreshHistory();
+    });
+    if (updated.status == 'ARRIVED_AT_CUSTOMER') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Llegada detectada correctamente.')),
+      );
+    }
+  }
 
   Future<void> advance() async {
     final next = nextStatus[delivery.status];
@@ -420,6 +434,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(courierDataRevisionProvider, (_, __) => unawaited(refreshDelivery()));
     final next = nextStatus[delivery.status];
     return Scaffold(
       appBar: AppBar(title: const Text('Detalle de entrega')),
@@ -498,21 +513,23 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
                         label: Text(busy ? 'Procesando…' : 'Aceptar'))),
               ],
             ),
-          ] else if (next != null) ...[
+          ] else if (next != null || delivery.status == 'IN_TRANSIT') ...[
             const SizedBox(height: 24),
-            if (const {'PICKED_UP','IN_TRANSIT'}.contains(delivery.status)) ...[
+            if (delivery.status == 'IN_TRANSIT') ...[
               OutlinedButton.icon(
                 onPressed: busy ? null : markArrived,
                 icon: const Icon(Icons.location_on),
-                label: const Text('He llegado'),
+                label: const Text('No se detectó mi llegada'),
               ),
               const SizedBox(height: 12),
             ],
             FilledButton.icon(
-              onPressed: busy ? null : advance,
+              onPressed: busy || delivery.status == 'IN_TRANSIT' ? null : advance,
               icon: const Icon(Icons.check_circle_outline),
               label: Text(
-                  busy ? 'Actualizando…' : 'Marcar: ${_statusLabel(next)}'),
+                  busy ? 'Actualizando…' : delivery.status == 'ARRIVED_AT_CUSTOMER'
+                    ? 'ENTREGAR PEDIDO' : delivery.status == 'IN_TRANSIT'
+                      ? 'ENTREGAR PEDIDO' : 'Marcar: ${_statusLabel(next!)}'),
             ),
           ],
         ],

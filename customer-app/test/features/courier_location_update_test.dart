@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('serializes the exact backend contract in UTC', () {
     final location = CourierLocationUpdate(
+      deliveryId: 'delivery',
       latitude: -12.0464,
       longitude: -77.0428,
       speed: 25,
@@ -15,6 +16,7 @@ void main() {
       gpsTimestamp: DateTime.parse('2026-07-28T10:30:00-05:00'),
     );
     expect(location.toJson(), {
+      'deliveryId': 'delivery',
       'latitude': -12.0464,
       'longitude': -77.0428,
       'speed': 25,
@@ -30,6 +32,7 @@ void main() {
 
   test('omits nullable optional fields', () {
     final json = CourierLocationUpdate(
+      deliveryId: 'delivery',
       latitude: 0,
       longitude: 0,
       accuracy: 0.5,
@@ -37,6 +40,7 @@ void main() {
       gpsTimestamp: DateTime.utc(2026),
     ).toJson();
     expect(json.keys, {
+      'deliveryId',
       'latitude',
       'longitude',
       'accuracy',
@@ -48,6 +52,7 @@ void main() {
   test('rejects invalid coordinates and precision', () {
     expect(
       CourierLocationUpdate(
+        deliveryId: 'delivery',
         latitude: 91,
         longitude: 0,
         accuracy: 0,

@@ -23,6 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class TrackingControllerLocationTest {
+    private final UUID requestDeliveryId = UUID.randomUUID();
     private TrackingService service;
     private MockMvc mvc;
 
@@ -39,42 +40,42 @@ class TrackingControllerLocationTest {
     @Test
     void courierWithPickedUpDeliveryIsAcceptedAndKeepsDeliveryAssociation() throws Exception {
         UUID deliveryId = UUID.randomUUID();
-        when(service.location(any(), any())).thenReturn(Optional.of(location(deliveryId)));
+        when(service.location(any(), any(), any())).thenReturn(Optional.of(location(deliveryId)));
         mvc.perform(validRequest()).andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.deliveryId").value(deliveryId.toString()));
-        verify(service).location(any(), argThat(command ->
+        verify(service).location(any(), eq(requestDeliveryId), argThat(command ->
                 command.latitude().compareTo(new BigDecimal("-12.0464")) == 0));
     }
 
     @Test
     void courierWithInTransitDeliveryIsAccepted() throws Exception {
-        when(service.location(any(), any())).thenReturn(Optional.of(location(UUID.randomUUID())));
+        when(service.location(any(), any(), any())).thenReturn(Optional.of(location(UUID.randomUUID())));
         mvc.perform(validRequest()).andExpect(status().isAccepted());
     }
 
     @Test
     void duplicateIsAcceptedWithoutCreatingAResponseBody() throws Exception {
-        when(service.location(any(), any())).thenReturn(Optional.empty());
+        when(service.location(any(), any(), any())).thenReturn(Optional.empty());
         mvc.perform(validRequest()).andExpect(status().isAccepted());
-        verify(service, times(1)).location(any(), any());
+        verify(service, times(1)).location(any(), eq(requestDeliveryId), any());
     }
 
     @Test
     void courierWithoutCompatibleDeliveryIsConflict() throws Exception {
-        when(service.location(any(), any())).thenThrow(conflict());
+        when(service.location(any(), any(), any())).thenThrow(conflict());
         mvc.perform(validRequest()).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("ACTIVE_DELIVERY_NOT_TRACKABLE"));
     }
 
     @Test
     void deliveredDeliveryIsRejected() throws Exception {
-        when(service.location(any(), any())).thenThrow(conflict());
+        when(service.location(any(), any(), any())).thenThrow(conflict());
         mvc.perform(validRequest()).andExpect(status().isConflict());
     }
 
     @Test
     void deliveryAssignedToAnotherCourierIsRejected() throws Exception {
-        when(service.location(any(), any())).thenThrow(conflict());
+        when(service.location(any(), any(), any())).thenThrow(conflict());
         mvc.perform(validRequest()).andExpect(status().isConflict());
     }
 
@@ -87,6 +88,19 @@ class TrackingControllerLocationTest {
         verifyNoInteractions(service);
     }
 
+    @Test
+    void legacyRequestWithoutDeliveryIdIsForwardedForSafeSingleDeliveryFallback() throws Exception {
+        when(service.location(any(), isNull(), any())).thenReturn(Optional.of(location(UUID.randomUUID())));
+        mvc.perform(post("/api/v1/couriers/location")
+                        .contentType("application/json")
+                        .content("""
+                          {"latitude":-12.0464,"longitude":-77.0428,"accuracy":8,
+                           "provider":"gps","gpsTimestamp":"2026-08-07T12:00:00Z"}
+                          """))
+                .andExpect(status().isAccepted());
+        verify(service).location(any(), isNull(), any());
+    }
+
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder validRequest() {
         return post("/api/v1/couriers/location")
                 .contentType("application/json")
@@ -95,9 +109,9 @@ class TrackingControllerLocationTest {
 
     private String payload(String latitude, String longitude) {
         return """
-                {"latitude":%s,"longitude":%s,"accuracy":8,
+                {"deliveryId":"%s","latitude":%s,"longitude":%s,"accuracy":8,
                  "provider":"gps","gpsTimestamp":"%s"}
-                """.formatted(latitude, longitude, Instant.now());
+                """.formatted(requestDeliveryId, latitude, longitude, Instant.now());
     }
 
     private ApiException conflict() {

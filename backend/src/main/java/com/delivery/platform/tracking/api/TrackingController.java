@@ -20,7 +20,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1")
 public class TrackingController {
-    public record LocationRequest(@NotNull @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+    public record LocationRequest(UUID deliveryId,
+                                  @NotNull @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
                                   @NotNull @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
                                   @PositiveOrZero BigDecimal speed, @DecimalMin("0") @DecimalMax("360") BigDecimal heading,
                                   @NotNull @PositiveOrZero BigDecimal accuracy, BigDecimal altitude,
@@ -51,7 +52,7 @@ public class TrackingController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     Optional<Location> location(@AuthenticationPrincipal IdentityPrincipal principal,
                                 @Valid @RequestBody LocationRequest request) {
-        return service.location(principal, new LocationCommand(request.latitude(), request.longitude(), request.speed(),
+        return service.location(principal, request.deliveryId(), new LocationCommand(request.latitude(), request.longitude(), request.speed(),
                 request.heading(), request.accuracy(), request.altitude(), request.provider(), request.batteryLevel(), request.gpsTimestamp()));
     }
 

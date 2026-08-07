@@ -26,6 +26,7 @@ class _FakeLocationService implements CourierLocationServiceContract {
   int starts = 0;
   int stops = 0;
   int resumes = 0;
+  String? startedDeliveryId;
   Completer<void>? startGate;
 
   @override
@@ -35,8 +36,9 @@ class _FakeLocationService implements CourierLocationServiceContract {
   @override
   CourierLocationUpdate? get lastValidLocation => null;
   @override
-  Future<bool> start() async {
+  Future<bool> start({required String deliveryId}) async {
     starts++;
+    startedDeliveryId = deliveryId;
     await startGate?.future;
     active = true;
     return true;
@@ -159,4 +161,32 @@ void main() {
     ));
     expect(service.active, isFalse);
   });
+
+  test('recovery keeps the explicitly persisted delivery among multiple active deliveries', () async {
+    SharedPreferences.setMockInitialValues({'courier.deliveryId': 'delivery-2'});
+    await controller().restoreFromBackend([
+      delivery('delivery-1'),
+      delivery('delivery-2'),
+    ]);
+    expect(service.startedDeliveryId, 'delivery-2');
+  });
+
+  test('recovery does not guess when multiple active deliveries have no persisted selection', () async {
+    await controller().restoreFromBackend([
+      delivery('delivery-1'),
+      delivery('delivery-2'),
+    ]);
+    expect(service.starts, 0);
+    expect(container.read(courierTrackingControllerProvider), isA<TrackingError>());
+  });
 }
+
+CourierDelivery delivery(String id) => CourierDelivery(
+      id: id,
+      orderId: 'order-$id',
+      status: 'IN_TRANSIT',
+      deliveryType: 'PLATFORM_DELIVERY',
+      pickupNotes: null,
+      deliveryNotes: null,
+      createdAt: '2026-08-07T00:00:00Z',
+    );

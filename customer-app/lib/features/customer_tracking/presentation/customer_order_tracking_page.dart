@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/providers.dart';
+import '../../../core/offline/offline_cache.dart';
 import '../domain/tracking_location.dart';
 import 'customer_tracking_controller.dart';
 
@@ -30,6 +32,19 @@ class _CustomerOrderTrackingPageState
   final MapController _mapController = MapController();
   TrackingLocation? _displayed;
   TrackingLocation? _previous;
+
+  Future<void> _showArrivalOnce(String deliveryId) async {
+    final key = 'arrivalShown:$deliveryId';
+    if (await OfflineCache.read(key) == true || !mounted) return;
+    await OfflineCache.write(key, true);
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showMaterialBanner(MaterialBanner(
+      leading: const Icon(Icons.delivery_dining),
+      content: const Text('¡Llegó tu pedido!\nTu repartidor ya se encuentra en el punto de entrega.'),
+      actions: [TextButton(onPressed: messenger.hideCurrentMaterialBanner, child: const Text('ENTENDIDO'))],
+    ));
+  }
 
   @override
   void initState() {
@@ -59,10 +74,7 @@ class _CustomerOrderTrackingPageState
       customerOrderTrackingControllerProvider(widget.orderId),
       (previous,next) {
         if(next.arrivalNoticeId!=null && next.arrivalNoticeId!=previous?.arrivalNoticeId) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Tu repartidor llegó.'),
-            action: SnackBarAction(label:'Ver pedido',onPressed:() {}),
-          ));
+          unawaited(_showArrivalOnce(next.arrivalNoticeId!));
         }
       },
     );

@@ -20,8 +20,11 @@ class DeliveryTypesTest {
                 DeliveryTypes.Status.ACCEPTED, DeliveryTypes.Status.PICKED_UP))
                 .doesNotThrowAnyException();
         assertThatCode(() -> DeliveryTypes.validate(
-                DeliveryTypes.Status.IN_TRANSIT, DeliveryTypes.Status.DELIVERED))
+                DeliveryTypes.Status.ARRIVED_AT_CUSTOMER, DeliveryTypes.Status.DELIVERED))
                 .doesNotThrowAnyException();
+        assertThatThrownBy(() -> DeliveryTypes.validate(
+                DeliveryTypes.Status.IN_TRANSIT, DeliveryTypes.Status.DELIVERED))
+                .isInstanceOf(ApiException.class);
     }
 
     @Test

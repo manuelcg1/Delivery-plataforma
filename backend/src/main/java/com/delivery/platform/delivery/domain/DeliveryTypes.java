@@ -24,7 +24,7 @@ public final class DeliveryTypes {
             Map.entry(Status.ACCEPTED, Set.of(Status.ARRIVED_AT_MERCHANT, Status.PICKED_UP, Status.CANCELLED)),
             Map.entry(Status.ARRIVED_AT_MERCHANT, Set.of(Status.PICKED_UP)),
             Map.entry(Status.PICKED_UP, Set.of(Status.IN_TRANSIT, Status.FAILED)),
-            Map.entry(Status.IN_TRANSIT, Set.of(Status.ARRIVED_AT_CUSTOMER, Status.DELIVERED, Status.FAILED)),
+            Map.entry(Status.IN_TRANSIT, Set.of(Status.ARRIVED_AT_CUSTOMER, Status.FAILED)),
             Map.entry(Status.ARRIVED_AT_CUSTOMER, Set.of(Status.DELIVERED, Status.FAILED))
     );
 

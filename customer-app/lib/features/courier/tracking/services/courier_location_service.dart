@@ -9,7 +9,8 @@ import '../../../../core/errors/app_exception.dart';
 
 class CourierTrackingConfig {
   static const interval = Duration(seconds: 10);
-  static const stoppedInterval = Duration(seconds: 45);
+  // Arrival dwell needs fresh timestamps even when the courier is stationary.
+  static const stoppedInterval = Duration(seconds: 10);
   static const minimumDistanceMeters = 15.0;
   static const maximumAccuracyMeters = 50.0;
   static const maximumPendingLocations = 30;
@@ -35,7 +36,7 @@ abstract interface class CourierLocationServiceContract {
   Stream<CourierLocationEvent> get events;
   bool get isActive;
   CourierLocationUpdate? get lastValidLocation;
-  Future<bool> start();
+  Future<bool> start({required String deliveryId});
   Future<void> sendFinalLocation();
   Future<void> stop();
   Future<void> pause();
@@ -58,6 +59,7 @@ class CourierLocationService implements CourierLocationServiceContract {
   Future<bool>? _startOperation;
   int _retryIndex = 0;
   bool _sending = false;
+  String? _deliveryId;
 
   @override
   Stream<CourierLocationEvent> get events => _events.stream;
@@ -67,11 +69,12 @@ class CourierLocationService implements CourierLocationServiceContract {
   CourierLocationUpdate? get lastValidLocation => _lastCaptured;
 
   @override
-  Future<bool> start() async {
-    if (isActive) return true;
+  Future<bool> start({required String deliveryId}) async {
+    if (isActive && _deliveryId == deliveryId) return true;
+    if (isActive) await stop();
     final currentStart = _startOperation;
     if (currentStart != null) return currentStart;
-    final operation = _start();
+    final operation = _start(deliveryId);
     _startOperation = operation;
     try {
       return await operation;
@@ -80,7 +83,8 @@ class CourierLocationService implements CourierLocationServiceContract {
     }
   }
 
-  Future<bool> _start() async {
+  Future<bool> _start(String deliveryId) async {
+    _deliveryId = deliveryId;
     _debug('tracking start requested');
     final initial = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
@@ -91,7 +95,7 @@ class CourierLocationService implements CourierLocationServiceContract {
     _subscription = Geolocator.getPositionStream(
       locationSettings: AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 15,
+        distanceFilter: 0,
         intervalDuration: CourierTrackingConfig.interval,
         foregroundNotificationConfig: ForegroundNotificationConfig(
           notificationTitle: 'Cerka está compartiendo tu ubicación',
@@ -135,6 +139,7 @@ class CourierLocationService implements CourierLocationServiceContract {
     _pending.clear();
     _retryIndex = 0;
     _sending = false;
+    _deliveryId = null;
   }
 
   @override
@@ -158,6 +163,7 @@ class CourierLocationService implements CourierLocationServiceContract {
   Future<void> _handle(Position position, {bool force = false}) async {
     if (!isActive && !force) return;
     final location = CourierLocationUpdate(
+      deliveryId: _deliveryId!,
       latitude: position.latitude,
       longitude: position.longitude,
       speed: position.speed >= 0 ? position.speed * 3.6 : null,
@@ -188,7 +194,6 @@ class CourierLocationService implements CourierLocationServiceContract {
       location.latitude,
       location.longitude,
     );
-    if (distance == 0) return false;
     final elapsed = DateTime.now().difference(_lastSentAt!);
     final moving = (location.speed ?? 0) >= 3;
     return distance >= CourierTrackingConfig.minimumDistanceMeters ||

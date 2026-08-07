@@ -87,10 +87,10 @@ public class TrackingService {
     }
 
     @Transactional
-    public Optional<Location> location(IdentityPrincipal principal, LocationCommand command) {
+    public Optional<Location> location(IdentityPrincipal principal, UUID requestedDeliveryId, LocationCommand command) {
         CourierMe courier = me(principal);
         validate(command);
-        ActiveDelivery delivery = activeTrackingDelivery(principal.tenantId(), courier.id())
+        ActiveDelivery delivery = activeTrackingDelivery(principal.tenantId(), courier.id(), requestedDeliveryId)
                 .orElseThrow(() -> error(HttpStatus.CONFLICT, "ACTIVE_DELIVERY_NOT_TRACKABLE",
                         "No existe una entrega activa compatible con el seguimiento"));
         UUID deliveryId = delivery.deliveryId();
@@ -164,8 +164,9 @@ public class TrackingService {
     }
 
     private boolean duplicate(Location previous, LocationCommand current) {
-        return previous.gpsTimestamp().equals(current.gpsTimestamp()) ||
-                (previous.latitude().compareTo(current.latitude()) == 0 && previous.longitude().compareTo(current.longitude()) == 0);
+        // Equal coordinates with a newer GPS timestamp are a valid stationary
+        // heartbeat used to prove dwell at the customer geofence.
+        return previous.gpsTimestamp().equals(current.gpsTimestamp());
     }
 
     boolean impossible(Location previous, LocationCommand current) {
@@ -195,12 +196,13 @@ public class TrackingService {
                 .param("t", tenantId).param("c", courierId).query((r, n) -> map(r)).optional();
     }
 
-    private Optional<ActiveDelivery> activeTrackingDelivery(UUID tenantId, UUID courierId) {
-        return db.sql("select id,order_id,customer_id,status from deliveries where tenant_id=:t and courier_id=:c and status in('PICKED_UP','IN_TRANSIT','ARRIVED_AT_CUSTOMER') order by created_at desc limit 1")
-                .param("t", tenantId).param("c", courierId)
+    private Optional<ActiveDelivery> activeTrackingDelivery(UUID tenantId, UUID courierId, UUID deliveryId) {
+        List<ActiveDelivery> matches = db.sql("select id,order_id,customer_id,status from deliveries where tenant_id=:t and courier_id=:c and (cast(:d as uuid) is null or id=:d) and status in('PICKED_UP','IN_TRANSIT','ARRIVED_AT_CUSTOMER') order by created_at desc limit 2")
+                .param("t", tenantId).param("c", courierId).param("d", deliveryId)
                 .query((r, n) -> new ActiveDelivery(r.getObject("id", UUID.class),
                         r.getObject("order_id", UUID.class), r.getObject("customer_id", UUID.class),
-                        r.getString("status"))).optional();
+                        r.getString("status"))).list();
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }
 
     private Location map(java.sql.ResultSet r) throws java.sql.SQLException {
