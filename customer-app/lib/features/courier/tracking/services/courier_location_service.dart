@@ -23,13 +23,14 @@ class CourierTrackingConfig {
   ];
 }
 
-enum CourierLocationEventType { sending, sent, offline, error }
+enum CourierLocationEventType { captured, sending, sent, offline, error }
 
 class CourierLocationEvent {
-  const CourierLocationEvent(this.type, {this.sentAt, this.message});
+  const CourierLocationEvent(this.type, {this.sentAt, this.message, this.location});
   final CourierLocationEventType type;
   final DateTime? sentAt;
   final String? message;
+  final CourierLocationUpdate? location;
 }
 
 abstract interface class CourierLocationServiceContract {
@@ -181,6 +182,10 @@ class CourierLocationService implements CourierLocationServiceContract {
       return;
     }
     _lastCaptured = location;
+    _events.add(CourierLocationEvent(
+      CourierLocationEventType.captured,
+      location: location,
+    ));
     if (!force && !_shouldSend(location)) return;
     await _enqueueAndFlush(location, force: force);
   }

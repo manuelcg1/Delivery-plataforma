@@ -6,6 +6,7 @@ import '../../../../core/providers.dart';
 import '../../../../core/auth/session_store.dart';
 import '../../data/courier_repository.dart';
 import '../data/courier_tracking_repository.dart';
+import '../domain/courier_location_update.dart';
 import '../domain/tracking_policy.dart';
 import '../services/courier_location_permission_service.dart';
 import '../services/courier_location_service.dart';
@@ -27,9 +28,10 @@ class TrackingStarting extends CourierTrackingState {
 }
 
 class TrackingActive extends CourierTrackingState {
-  const TrackingActive({this.lastSentAt, this.sending = false});
+  const TrackingActive({this.lastSentAt, this.sending = false, this.location});
   final DateTime? lastSentAt;
   final bool sending;
+  final CourierLocationUpdate? location;
 }
 
 class TrackingPaused extends CourierTrackingState {
@@ -106,6 +108,7 @@ class CourierTrackingController extends Notifier<CourierTrackingState> {
         lastSentAt: state is TrackingActive
             ? (state as TrackingActive).lastSentAt
             : null,
+        location: _service.lastValidLocation,
       );
       return true;
     }
@@ -243,15 +246,26 @@ class CourierTrackingController extends Notifier<CourierTrackingState> {
 
   void _onEvent(CourierLocationEvent event) {
     switch (event.type) {
+      case CourierLocationEventType.captured:
+        final current = state;
+        state = TrackingActive(
+          lastSentAt: current is TrackingActive ? current.lastSentAt : null,
+          sending: current is TrackingActive && current.sending,
+          location: event.location,
+        );
       case CourierLocationEventType.sending:
         state = TrackingActive(
           lastSentAt: state is TrackingActive
               ? (state as TrackingActive).lastSentAt
               : null,
           sending: true,
+          location: _service.lastValidLocation,
         );
       case CourierLocationEventType.sent:
-        state = TrackingActive(lastSentAt: event.sentAt);
+        state = TrackingActive(
+          lastSentAt: event.sentAt,
+          location: _service.lastValidLocation,
+        );
         unawaited(_persist(active: true, lastSentAt: event.sentAt));
       case CourierLocationEventType.offline:
         state = TrackingOffline(event.message ?? 'Sin conexión.');

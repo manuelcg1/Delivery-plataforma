@@ -50,6 +50,66 @@ class CourierDelivery {
       );
 }
 
+class CourierDeliveryRoute {
+  const CourierDeliveryRoute({
+    required this.deliveryId,
+    required this.orderId,
+    required this.deliveryStatus,
+    required this.orderNumber,
+    required this.customerName,
+    required this.customerPhone,
+    required this.destinationAddress,
+    required this.destinationReference,
+    required this.deliveryNotes,
+    required this.merchantName,
+    required this.merchantAddress,
+    required this.originLatitude,
+    required this.originLongitude,
+    required this.destinationLatitude,
+    required this.destinationLongitude,
+    required this.routePolyline,
+    required this.routeProvider,
+    required this.distanceKm,
+    required this.etaMinutes,
+  });
+
+  final String deliveryId, orderId, deliveryStatus, orderNumber;
+  final String? customerName, customerPhone, destinationAddress;
+  final String? destinationReference, deliveryNotes, merchantName, merchantAddress;
+  final double? originLatitude, originLongitude;
+  final double? destinationLatitude, destinationLongitude;
+  final String? routePolyline, routeProvider;
+  final double? distanceKm;
+  final int? etaMinutes;
+
+  bool get hasDestination =>
+      destinationLatitude != null && destinationLongitude != null;
+  bool get hasOrigin => originLatitude != null && originLongitude != null;
+
+  factory CourierDeliveryRoute.fromJson(Map<String, dynamic> json) =>
+      CourierDeliveryRoute(
+        deliveryId: json['deliveryId']?.toString() ?? '',
+        orderId: json['orderId']?.toString() ?? '',
+        deliveryStatus: json['deliveryStatus']?.toString() ?? 'UNKNOWN',
+        orderNumber: json['orderNumber']?.toString() ?? '',
+        customerName: json['customerName']?.toString(),
+        customerPhone: json['customerPhone']?.toString(),
+        destinationAddress: json['destinationAddress']?.toString(),
+        destinationReference: json['destinationReference']?.toString(),
+        deliveryNotes: json['deliveryNotes']?.toString(),
+        merchantName: json['merchantName']?.toString(),
+        merchantAddress: json['merchantAddress']?.toString(),
+        originLatitude: (json['originLatitude'] as num?)?.toDouble(),
+        originLongitude: (json['originLongitude'] as num?)?.toDouble(),
+        destinationLatitude: (json['destinationLatitude'] as num?)?.toDouble(),
+        destinationLongitude: (json['destinationLongitude'] as num?)?.toDouble(),
+        routePolyline: json['routePolyline']?.toString(),
+        routeProvider: json['routeProvider']?.toString(),
+        distanceKm: (json['distanceKm'] as num?)?.toDouble(),
+        etaMinutes: (json['etaMinutes'] as num?)?.toInt(),
+      );
+}
+
 class CourierNotification {
   const CourierNotification({
     required this.id,
@@ -138,6 +198,13 @@ class CourierRepository {
     final response =
         await api.dio.get<Map<String, dynamic>>('/api/v1/deliveries/$id');
     return CourierDelivery.fromJson(response.data!);
+  }
+
+  Future<CourierDeliveryRoute> route(String deliveryId) async {
+    final response = await api.dio.get<Map<String, dynamic>>(
+      '/api/v1/courier/deliveries/$deliveryId/route',
+    );
+    return CourierDeliveryRoute.fromJson(response.data!);
   }
 
   Future<CourierDelivery> updateDelivery(String id, String status) async {

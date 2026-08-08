@@ -9,6 +9,7 @@ import '../data/courier_repository.dart';
 import '../notifications/courier_notification_service.dart';
 import '../tracking/domain/tracking_policy.dart';
 import '../tracking/presentation/courier_tracking_controller.dart';
+import 'courier_route_section.dart';
 
 final courierRepositoryProvider = Provider(
   (ref) => CourierRepository(ref.watch(apiClientProvider)),
@@ -436,6 +437,21 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
   Widget build(BuildContext context) {
     ref.listen<int>(courierDataRevisionProvider, (_, __) => unawaited(refreshDelivery()));
     final next = nextStatus[delivery.status];
+    if (delivery.status == 'DELIVERED') {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Detalle de entrega')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.check_circle, size: 72, color: Color(0xFF15803D)),
+              SizedBox(height: 16),
+              Text('Pedido entregado correctamente', textAlign: TextAlign.center),
+            ]),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Detalle de entrega')),
       body: ListView(
@@ -445,6 +461,23 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
               style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
           Chip(label: Text(_statusLabel(delivery.status))),
+          if (const {
+            'ASSIGNED',
+            'ACCEPTED',
+            'ARRIVED_AT_MERCHANT',
+            'PICKED_UP',
+            'IN_TRANSIT',
+            'ARRIVED_AT_CUSTOMER',
+          }.contains(delivery.status)) ...[
+            const SizedBox(height: 20),
+            Text('Ruta de entrega', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 10),
+            CourierRouteSection(
+              key: ValueKey('${delivery.id}-${delivery.status}'),
+              deliveryId: delivery.id,
+              deliveryStatus: delivery.status,
+            ),
+          ],
           if (shouldContinueTracking(delivery.status)) ...[
             const SizedBox(height: 12),
             const _TrackingStatusCard(),
