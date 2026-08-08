@@ -6,8 +6,16 @@ const row=(id:string,status:string)=>({id,status} as OrderRow);
 describe('experiencia de pedidos',()=>{
   it('aplica semáforo nuevo, entregado y neutral',()=>{
     expect(orderTone('PENDING')).toBe('new');
+    expect(orderTone('CONFIRMED')).toBe('progress');
+    expect(orderTone('PREPARING')).toBe('progress');
+    expect(orderTone('READY')).toBe('ready');
+    expect(orderTone('SEARCHING_COURIER')).toBe('ready');
+    expect(orderTone('COURIER_ASSIGNED')).toBe('transit');
+    expect(orderTone('ON_THE_WAY')).toBe('transit');
     expect(orderTone('DELIVERED')).toBe('delivered');
-    expect(orderTone('PREPARING')).toBe('neutral');
+    expect(orderTone('REJECTED')).toBe('issue');
+    expect(orderTone('CANCELLED')).toBe('issue');
+    expect(orderTone('UNKNOWN')).toBe('neutral');
   });
   it('detecta solo pedidos nuevos pendientes y evita duplicados',()=>{
     expect(unseenNewOrderIds([row('1','PENDING'),row('2','DELIVERED')],new Set())).toEqual(['1']);

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/providers.dart';
 import '../../../core/widgets/app_states.dart';
-import '../../../core/widgets/cart_feedback.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../orders/presentation/commerce_pages.dart';
 import '../../address/presentation/customer_address_form_page.dart';
@@ -664,14 +663,6 @@ class MerchantPage extends ConsumerWidget {
                       );
                       if (result == null || !context.mounted) return;
                       ref.invalidate(cartProvider);
-                      final messenger = cartFeedbackMessengerKey.currentState;
-                      if (messenger != null) {
-                        showProductAddedSnackBar(
-                          messenger,
-                          productName: result.productName,
-                          quantity: result.quantity,
-                        );
-                      }
                     },
                   ),
                 ),

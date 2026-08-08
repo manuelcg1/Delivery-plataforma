@@ -492,6 +492,13 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                           quantity: quantity,
                         );
                         if (!context.mounted) return;
+                        ref.invalidate(cartProvider);
+                        showProductAddedSnackBar(
+                          cartFeedbackMessengerKey.currentState ??
+                              ScaffoldMessenger.of(context),
+                          productName: widget.product.name,
+                          quantity: quantity,
+                        );
                         navigator.pop(ProductAddedResult(
                           productName: widget.product.name,
                           quantity: quantity,

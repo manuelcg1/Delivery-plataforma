@@ -74,24 +74,42 @@ class _CourierShellState extends ConsumerState<CourierShell> {
     ];
     return Scaffold(
       body: SafeArea(child: IndexedStack(index: index, children: pages)),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (value) => setState(() => index = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.delivery_dining_outlined),
-            selectedIcon: Icon(Icons.delivery_dining),
-            label: 'Entregas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.notifications_outlined),
-            label: 'Avisos',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            label: 'Perfil',
-          ),
-        ],
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          indicatorColor: const Color(0xFFFFE8D5),
+          iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+                color: states.contains(WidgetState.selected)
+                    ? const Color(0xFFEA580C)
+                    : const Color(0xFF475569),
+              )),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+                color: states.contains(WidgetState.selected)
+                    ? const Color(0xFFEA580C)
+                    : const Color(0xFF475569),
+                fontWeight: states.contains(WidgetState.selected)
+                    ? FontWeight.w700
+                    : FontWeight.w500,
+              )),
+        ),
+        child: NavigationBar(
+          selectedIndex: index,
+          onDestinationSelected: (value) => setState(() => index = value),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.delivery_dining_outlined),
+              selectedIcon: Icon(Icons.delivery_dining),
+              label: 'Entregas',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.notifications_outlined),
+              label: 'Avisos',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              label: 'Perfil',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -181,27 +199,43 @@ class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
                     'EXPIRED',
                   }.contains(item.status))
               .toList();
-          final delivered =
-              deliveries.where((item) => item.status == 'DELIVERED').toList();
+          final delivered = sortedDeliveredOrders(deliveries);
+          final recentDelivered = recentDeliveredOrders(delivered);
           return RefreshIndicator(
             onRefresh: () async => refresh(),
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
                 Text('Hola, ${profile.name}',
-                    style: Theme.of(context).textTheme.headlineMedium),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A))),
                 const SizedBox(height: 4),
                 Text(
                     '${profile.activeDeliveries}/${profile.maxActiveDeliveries} entregas activas'),
                 const SizedBox(height: 16),
                 Card(
+                  margin: EdgeInsets.zero,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        const Icon(Icons.circle, color: Colors.green),
+                        const Icon(Icons.circle,
+                            size: 18, color: Color(0xFF16A34A)),
                         const SizedBox(width: 12),
-                        const Expanded(child: Text('Disponibilidad')),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Disponibilidad',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w700)),
+                              Text('Recibiendo pedidos',
+                                  style: TextStyle(
+                                      color: Color(0xFF64748B), fontSize: 13)),
+                            ],
+                          ),
+                        ),
                         DropdownButton<String>(
                           value: profile.status,
                           items: const [
@@ -225,22 +259,25 @@ class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('Mis entregas',
-                    style: Theme.of(context).textTheme.titleLarge),
+                Row(children: [
+                  Text('Entrega activa',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  if (active.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    _CountBadge(count: active.length),
+                  ],
+                ]),
                 const SizedBox(height: 8),
                 if (active.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 48),
                     child: Center(child: Text('No tienes entregas asignadas.')),
                   ),
-                ...active.map(
-                  (delivery) => Card(
-                    child: ListTile(
-                      leading: const CircleAvatar(
-                          child: Icon(Icons.local_shipping_outlined)),
-                      title: Text('Pedido ${delivery.orderId.substring(0, 8)}'),
-                      subtitle: Text(_statusLabel(delivery.status)),
-                      trailing: const Icon(Icons.chevron_right),
+                ...active.map((delivery) => _ActiveDeliveryCard(
+                      delivery: delivery,
                       onTap: () async {
                         await Navigator.push<void>(
                           context,
@@ -251,12 +288,33 @@ class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
                         );
                         refresh();
                       },
-                    ),
-                  ),
-                ),
+                    )),
                 const SizedBox(height: 24),
-                Text('Entregados',
-                    style: Theme.of(context).textTheme.titleLarge),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('Entregados',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                    ),
+                    if (delivered.isNotEmpty)
+                      TextButton(
+                        onPressed: () => Navigator.push<void>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CourierDeliveredOrdersPage(
+                              deliveries: delivered,
+                            ),
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFEA580C)),
+                        child: const Text('Ver todos'),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 if (delivered.isEmpty)
                   const Padding(
@@ -264,30 +322,13 @@ class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
                     child: Center(
                         child: Text('Aún no tienes pedidos entregados.')),
                   ),
-                ...delivered.map((delivery) => Card(
-                      color: const Color(0xFFE8F8EF),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        side: const BorderSide(color: Color(0xFF86D5A8)),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Color(0xFF169B62),
-                          foregroundColor: Colors.white,
-                          child: Icon(Icons.check_rounded),
-                        ),
-                        title:
-                            Text('Pedido ${delivery.orderId.substring(0, 8)}'),
-                        subtitle: _DeliveredAt(deliveryId: delivery.id),
-                        trailing: const Icon(Icons.chevron_right,
-                            color: Color(0xFF087A49)),
-                        onTap: () => Navigator.push<void>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                CourierDeliveryPage(delivery: delivery),
-                          ),
+                ...recentDelivered.map((delivery) => _DeliveredOrderCard(
+                      delivery: delivery,
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CourierDeliveryPage(delivery: delivery),
                         ),
                       ),
                     )),
@@ -295,6 +336,147 @@ class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
             ),
           );
         },
+      );
+}
+
+List<CourierDelivery> sortedDeliveredOrders(
+    Iterable<CourierDelivery> deliveries) {
+  final result = deliveries
+      .where((delivery) => delivery.status == 'DELIVERED')
+      .toList(growable: false);
+  return [...result]..sort((left, right) {
+      final leftDate = DateTime.tryParse(left.createdAt);
+      final rightDate = DateTime.tryParse(right.createdAt);
+      if (leftDate == null && rightDate == null) return 0;
+      if (leftDate == null) return 1;
+      if (rightDate == null) return -1;
+      return rightDate.compareTo(leftDate);
+    });
+}
+
+List<CourierDelivery> recentDeliveredOrders(
+  Iterable<CourierDelivery> deliveries, {
+  int limit = 4,
+}) =>
+    sortedDeliveredOrders(deliveries).take(limit).toList(growable: false);
+
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0xFFFF7C00),
+          shape: BoxShape.circle,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text('$count',
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w700)),
+        ),
+      );
+}
+
+class _ActiveDeliveryCard extends StatelessWidget {
+  const _ActiveDeliveryCard({required this.delivery, required this.onTap});
+
+  final CourierDelivery delivery;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        margin: const EdgeInsets.only(bottom: 10),
+        color: const Color(0xFFFFF7ED),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: Color(0xFFFED7AA)),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          leading: const CircleAvatar(
+            radius: 27,
+            backgroundColor: Color(0xFFFFE8D5),
+            foregroundColor: Color(0xFFEA580C),
+            child: Icon(Icons.local_shipping_outlined),
+          ),
+          title: Text('Pedido ${delivery.orderId.substring(0, 8)}',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: Text(_statusLabel(delivery.status),
+                style: const TextStyle(
+                    color: Color(0xFFEA580C), fontWeight: FontWeight.w600)),
+          ),
+          trailing: const Icon(Icons.chevron_right, color: Color(0xFFEA580C)),
+          onTap: onTap,
+        ),
+      );
+}
+
+class _DeliveredOrderCard extends StatelessWidget {
+  const _DeliveredOrderCard({required this.delivery, required this.onTap});
+
+  final CourierDelivery delivery;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        margin: const EdgeInsets.only(bottom: 10),
+        color: const Color(0xFFE8F8EF),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: Color(0xFF86D5A8)),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+          leading: const CircleAvatar(
+            backgroundColor: Color(0xFF169B62),
+            foregroundColor: Colors.white,
+            child: Icon(Icons.check_rounded),
+          ),
+          title: Text('Pedido ${delivery.orderId.substring(0, 8)}',
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: _DeliveredAt(deliveryId: delivery.id),
+          trailing: const Icon(Icons.chevron_right, color: Color(0xFF087A49)),
+          onTap: onTap,
+        ),
+      );
+}
+
+class CourierDeliveredOrdersPage extends StatelessWidget {
+  const CourierDeliveredOrdersPage({
+    super.key,
+    required this.deliveries,
+  });
+
+  final List<CourierDelivery> deliveries;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Pedidos entregados')),
+        body: ListView.builder(
+          padding: const EdgeInsets.all(20),
+          itemCount: deliveries.length,
+          itemBuilder: (context, index) {
+            final delivery = deliveries[index];
+            return _DeliveredOrderCard(
+              delivery: delivery,
+              onTap: () => Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CourierDeliveryPage(delivery: delivery),
+                ),
+              ),
+            );
+          },
+        ),
       );
 }
 
@@ -329,7 +511,8 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
       history = ref.read(courierRepositoryProvider).history(delivery.id);
 
   Future<void> refreshDelivery() async {
-    final updated = await ref.read(courierRepositoryProvider).delivery(delivery.id);
+    final updated =
+        await ref.read(courierRepositoryProvider).delivery(delivery.id);
     if (!mounted || updated.status == delivery.status) return;
     setState(() {
       delivery = updated;
@@ -420,22 +603,33 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
   }
 
   Future<void> markArrived() async {
-    setState(() => busy=true);
+    setState(() => busy = true);
     try {
-      final notified=await ref.read(courierRepositoryProvider).markArrived(delivery.orderId);
-      delivery=await ref.read(courierRepositoryProvider).delivery(delivery.id);
+      final notified = await ref
+          .read(courierRepositoryProvider)
+          .markArrived(delivery.orderId);
+      delivery =
+          await ref.read(courierRepositoryProvider).delivery(delivery.id);
       refreshHistory();
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-        notified?'Llegada registrada. El cliente fue notificado.':'La llegada ya había sido registrada.')));
-    } catch(error) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ref.read(apiClientProvider).exception(error).message)));
-    } finally { if(mounted) setState(()=>busy=false); }
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(notified
+                ? 'Llegada registrada. El cliente fue notificado.'
+                : 'La llegada ya había sido registrada.')));
+    } catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text(ref.read(apiClientProvider).exception(error).message)));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(courierDataRevisionProvider, (_, __) => unawaited(refreshDelivery()));
+    ref.listen<int>(
+        courierDataRevisionProvider, (_, __) => unawaited(refreshDelivery()));
     final next = nextStatus[delivery.status];
     if (delivery.status == 'DELIVERED') {
       return Scaffold(
@@ -446,7 +640,8 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.check_circle, size: 72, color: Color(0xFF15803D)),
               SizedBox(height: 16),
-              Text('Pedido entregado correctamente', textAlign: TextAlign.center),
+              Text('Pedido entregado correctamente',
+                  textAlign: TextAlign.center),
             ]),
           ),
         ),
@@ -457,10 +652,6 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Pedido ${delivery.orderId.substring(0, 8)}',
-              style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Chip(label: Text(_statusLabel(delivery.status))),
           if (const {
             'ASSIGNED',
             'ACCEPTED',
@@ -469,9 +660,6 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
             'IN_TRANSIT',
             'ARRIVED_AT_CUSTOMER',
           }.contains(delivery.status)) ...[
-            const SizedBox(height: 20),
-            Text('Ruta de entrega', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 10),
             CourierRouteSection(
               key: ValueKey('${delivery.id}-${delivery.status}'),
               deliveryId: delivery.id,
@@ -479,11 +667,11 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
             ),
           ],
           if (shouldContinueTracking(delivery.status)) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             const _TrackingStatusCard(),
           ],
-          const SizedBox(height: 20),
-          Text('Línea de tiempo',
+          const SizedBox(height: 24),
+          Text('Progreso de la entrega',
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           FutureBuilder<List<CourierDeliveryHistory>>(
@@ -557,12 +745,16 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
               const SizedBox(height: 12),
             ],
             FilledButton.icon(
-              onPressed: busy || delivery.status == 'IN_TRANSIT' ? null : advance,
+              onPressed:
+                  busy || delivery.status == 'IN_TRANSIT' ? null : advance,
               icon: const Icon(Icons.check_circle_outline),
-              label: Text(
-                  busy ? 'Actualizando…' : delivery.status == 'ARRIVED_AT_CUSTOMER'
-                    ? 'ENTREGAR PEDIDO' : delivery.status == 'IN_TRANSIT'
-                      ? 'ENTREGAR PEDIDO' : 'Marcar: ${_statusLabel(next!)}'),
+              label: Text(busy
+                  ? 'Actualizando…'
+                  : delivery.status == 'ARRIVED_AT_CUSTOMER'
+                      ? 'ENTREGAR PEDIDO'
+                      : delivery.status == 'IN_TRANSIT'
+                          ? 'ENTREGAR PEDIDO'
+                          : 'Marcar: ${_statusLabel(next!)}'),
             ),
           ],
         ],
@@ -691,8 +883,10 @@ class _CourierNotificationsPageState
   }
 
   void reload() {
-    final next=ref.read(courierRepositoryProvider).notifications();
-    setState(() { future=next; });
+    final next = ref.read(courierRepositoryProvider).notifications();
+    setState(() {
+      future = next;
+    });
   }
 
   Future<void> refresh() async {
@@ -723,9 +917,7 @@ class _CourierNotificationsPageState
                   Text('Notificaciones',
                       style: Theme.of(context).textTheme.headlineMedium),
                   const SizedBox(height: 24),
-                  _CourierError(
-                      message: message,
-                      onRetry: reload),
+                  _CourierError(message: message, onRetry: reload),
                 ],
               );
             }

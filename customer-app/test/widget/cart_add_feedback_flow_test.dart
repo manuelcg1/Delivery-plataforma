@@ -83,11 +83,6 @@ Widget _testApp(
               );
               if (result == null || !context.mounted) return;
               ref.invalidate(cartProvider);
-              showProductAddedSnackBar(
-                cartFeedbackMessengerKey.currentState!,
-                productName: result.productName,
-                quantity: result.quantity,
-              );
             },
             child: const Text('Abrir producto'),
           ),

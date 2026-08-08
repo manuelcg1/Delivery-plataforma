@@ -1,10 +1,14 @@
 import type {OrderRow} from './types';
 
-export type OrderTone='new'|'delivered'|'neutral';
+export type OrderTone='new'|'progress'|'ready'|'transit'|'delivered'|'issue'|'neutral';
 
 export function orderTone(status:string):OrderTone {
   if(status==='PENDING') return 'new';
+  if(status==='CONFIRMED'||status==='PREPARING') return 'progress';
+  if(status==='READY'||status==='SEARCHING_COURIER') return 'ready';
+  if(status==='ASSIGNED'||status==='COURIER_ASSIGNED'||status==='PICKED_UP'||status==='ON_THE_WAY') return 'transit';
   if(status==='DELIVERED') return 'delivered';
+  if(status==='REJECTED'||status==='CANCELLED') return 'issue';
   return 'neutral';
 }
 

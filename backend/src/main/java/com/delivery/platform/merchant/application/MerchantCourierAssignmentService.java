@@ -32,7 +32,7 @@ public class MerchantCourierAssignmentService {
     public record AssignmentInfo(UUID deliveryId,UUID assignmentId,String assignmentStatus,String message,
                                  UUID courierId,String courierName,String vehicleType,String courierStatus,
                                  Instant assignedAt,Instant expiresAt,BigDecimal latitude,BigDecimal longitude,
-                                 Instant lastLocationAt) {}
+                                 Instant lastLocationAt,BigDecimal customerLatitude,BigDecimal customerLongitude) {}
 
     private final JdbcClient db;
     private final CourierAssignmentStrategy assignmentStrategy;
@@ -54,8 +54,12 @@ public class MerchantCourierAssignmentService {
             select d.id delivery_id,da.id assignment_id,da.status assignment_status,da.result_message,
               c.id courier_id,u.first_name||' '||u.last_name courier_name,c.vehicle_type,
               coalesce(ca.status,c.status) courier_status,da.assigned_at,da.expires_at,
-              cl.latitude,cl.longitude,cl.received_at
-            from deliveries d left join lateral(select * from delivery_assignments x where x.delivery_id=d.id
+              cl.latitude,cl.longitude,cl.received_at,
+              coalesce(o.delivery_latitude,address.latitude) customer_latitude,
+              coalesce(o.delivery_longitude,address.longitude) customer_longitude
+            from deliveries d join orders o on o.id=d.order_id and o.tenant_id=d.tenant_id
+            left join delivery_addresses address on address.id=d.delivery_address_id and address.tenant_id=d.tenant_id
+            left join lateral(select * from delivery_assignments x where x.delivery_id=d.id
               and x.tenant_id=d.tenant_id order by x.assigned_at desc limit 1) da on true
             left join courier_profiles c on c.id=coalesce(da.courier_id,d.courier_id)
             left join users u on u.id=c.user_id left join courier_availability ca on ca.courier_id=c.id
@@ -65,7 +69,8 @@ public class MerchantCourierAssignmentService {
                 r.getObject("delivery_id",UUID.class),r.getObject("assignment_id",UUID.class),r.getString("assignment_status"),
                 r.getString("result_message"),r.getObject("courier_id",UUID.class),r.getString("courier_name"),
                 r.getString("vehicle_type"),r.getString("courier_status"),instant(r,"assigned_at"),instant(r,"expires_at"),
-                r.getBigDecimal("latitude"),r.getBigDecimal("longitude"),instant(r,"received_at"))).single();
+                r.getBigDecimal("latitude"),r.getBigDecimal("longitude"),instant(r,"received_at"),
+                r.getBigDecimal("customer_latitude"),r.getBigDecimal("customer_longitude"))).single();
     }
 
     public PageResponse<AvailableCourier> available(IdentityPrincipal p,UUID orderId,String search,int page,int size) {
