@@ -27,3 +27,8 @@ customer-app/ios/Runner/GoogleService-Info.plist
 docker-compose.override.yml
 .local/
 backups/
+
+merchant-portal/node_modules/
+
+merchant-portal/node_modules/
+merchant-portal/.next/

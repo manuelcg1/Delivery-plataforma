@@ -10,6 +10,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/providers.dart';
 import '../../../core/offline/offline_cache.dart';
 import '../domain/tracking_location.dart';
+import '../domain/customer_tracking_response.dart';
 import 'customer_tracking_controller.dart';
 
 class CustomerOrderTrackingPage extends ConsumerStatefulWidget {
@@ -98,6 +99,7 @@ class _CustomerOrderTrackingPageState
                     mapController: _mapController,
                     previous: _previous,
                     location: _displayed,
+                    route: state.tracking?.route,
                     stale: state.stale,
                     tileUrl: ref.watch(configProvider).mapTileUrl,
                     onUserMoved: () {},
@@ -134,12 +136,14 @@ class _TrackingMap extends StatelessWidget {
     required this.mapController,
     required this.previous,
     required this.location,
+    required this.route,
     required this.stale,
     required this.tileUrl,
     required this.onUserMoved,
   });
   final MapController mapController;
   final TrackingLocation? previous, location;
+  final TrackingRoute? route;
   final bool stale;
   final String tileUrl;
   final VoidCallback onUserMoved;
@@ -147,7 +151,12 @@ class _TrackingMap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final target = location;
-    if (target == null) {
+    final routePoints = route == null
+        ? const <LatLng>[]
+        : decodePolyline(route!.polyline)
+            .map((point) => LatLng(point.latitude, point.longitude))
+            .toList(growable: false);
+    if (target == null && routePoints.isEmpty) {
       return const ColoredBox(
         color: Color(0xFFEFF6FF),
         child: Center(
@@ -164,20 +173,23 @@ class _TrackingMap extends StatelessWidget {
         ),
       );
     }
+    final initialCenter = target == null
+        ? routePoints[routePoints.length ~/ 2]
+        : LatLng(target.latitude, target.longitude);
     final from = previous;
-    final distance = from == null
+    final distance = from == null || target == null
         ? 0.0
         : const Distance().as(
             LengthUnit.Meter,
             LatLng(from.latitude, from.longitude),
             LatLng(target.latitude, target.longitude),
           );
-    final animate = from != null && !stale && distance < 5000;
+    final animate = from != null && target != null && !stale && distance < 5000;
     return FlutterMap(
       mapController: mapController,
       options: MapOptions(
-        initialCenter: LatLng(target.latitude, target.longitude),
-        initialZoom: 16,
+        initialCenter: initialCenter,
+        initialZoom: routePoints.isEmpty ? 16 : 14,
         onPositionChanged: (_, hasGesture) {
           if (hasGesture) onUserMoved();
         },
@@ -187,7 +199,26 @@ class _TrackingMap extends StatelessWidget {
           urlTemplate: tileUrl,
           userAgentPackageName: 'com.delivery.platform.customer',
         ),
-        TweenAnimationBuilder<double>(
+        if (routePoints.length >= 2)
+          PolylineLayer(polylines: [
+            Polyline(
+              points: routePoints,
+              strokeWidth: 5,
+              color: const Color(0xFF2563EB),
+            ),
+          ]),
+        if (route != null)
+          MarkerLayer(markers: [
+            Marker(
+              point: LatLng(route!.originLatitude, route!.originLongitude),
+              child: const Icon(Icons.store, color: Color(0xFF7C3AED), size: 34),
+            ),
+            Marker(
+              point: LatLng(route!.destinationLatitude, route!.destinationLongitude),
+              child: const Icon(Icons.home, color: Color(0xFFDC2626), size: 34),
+            ),
+          ]),
+        if (target != null) TweenAnimationBuilder<double>(
           key: ValueKey(target.gpsTimestamp),
           duration: animate ? const Duration(milliseconds: 800) : Duration.zero,
           tween: Tween(begin: 0, end: 1),

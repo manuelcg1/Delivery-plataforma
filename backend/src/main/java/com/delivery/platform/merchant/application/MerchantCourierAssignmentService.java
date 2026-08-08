@@ -162,6 +162,8 @@ public class MerchantCourierAssignmentService {
             .param("tenant",p.tenantId()).param("order",orderId).param("user",p.userId()).update();
         audit(p,s,"ORDER_HANDED_TO_COURIER","MANUAL",null,s.orderStatus(),"PICKED_UP","SUCCESS");
         event(p.tenantId(),s,"ORDER_HANDED_TO_COURIER");
+        realtime.delivery(p.tenantId(),s.deliveryId(),"OrderPickedUp",
+            Map.of("orderId",s.orderId(),"deliveryId",s.deliveryId(),"status","PICKED_UP"));
         return info(p,orderId);
     }
 

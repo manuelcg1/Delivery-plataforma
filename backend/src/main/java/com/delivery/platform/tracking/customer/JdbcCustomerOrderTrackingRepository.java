@@ -19,9 +19,13 @@ public class JdbcCustomerOrderTrackingRepository implements CustomerOrderTrackin
                 select d.order_id,d.id delivery_id,d.status,d.courier_id,
                        trim(concat(u.first_name,' ',u.last_name)) courier_name,
                        h.latitude,h.longitude,h.speed,h.heading,h.accuracy,h.altitude,
-                       h.gps_timestamp,h.received_at
+                       h.gps_timestamp,h.received_at,
+                       o.route_polyline,o.route_provider,o.route_generated_at,
+                       b.latitude origin_latitude,b.longitude origin_longitude,
+                       o.delivery_latitude destination_latitude,o.delivery_longitude destination_longitude
                   from deliveries d
                   join orders o on o.id=d.order_id and o.tenant_id=d.tenant_id
+                  join branches b on b.id=o.branch_id and b.tenant_id=o.tenant_id
                   left join courier_profiles c on c.id=d.courier_id and c.tenant_id=d.tenant_id
                   left join users u on u.id=c.user_id and u.tenant_id=d.tenant_id
                   left join lateral (
@@ -39,7 +43,11 @@ public class JdbcCustomerOrderTrackingRepository implements CustomerOrderTrackin
                         rs.getString("status"), rs.getObject("courier_id", UUID.class), rs.getString("courier_name"),
                         number(rs, "latitude"), number(rs, "longitude"), number(rs, "speed"),
                         number(rs, "heading"), number(rs, "accuracy"), number(rs, "altitude"),
-                        instant(rs, "gps_timestamp"), instant(rs, "received_at"))).optional();
+                        instant(rs, "gps_timestamp"), instant(rs, "received_at"),
+                        rs.getString("route_polyline"), rs.getString("route_provider"),
+                        instant(rs, "route_generated_at"), number(rs, "origin_latitude"),
+                        number(rs, "origin_longitude"), number(rs, "destination_latitude"),
+                        number(rs, "destination_longitude"))).optional();
     }
 
     private static Double number(java.sql.ResultSet rs, String column) throws java.sql.SQLException {

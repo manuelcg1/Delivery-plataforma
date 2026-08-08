@@ -10,6 +10,7 @@ class CustomerOrderTracking {
     this.deliveryId,
     this.courier,
     this.location,
+    this.route,
     this.updatedAt,
   });
 
@@ -18,6 +19,7 @@ class CustomerOrderTracking {
   final String deliveryStatus;
   final TrackingCourier? courier;
   final TrackingLocation? location;
+  final TrackingRoute? route;
   final DateTime? updatedAt;
   final bool trackingActive;
   final bool stale;
@@ -25,6 +27,7 @@ class CustomerOrderTracking {
   factory CustomerOrderTracking.fromJson(Map<String, dynamic> json) {
     final location = json['location'];
     final courier = json['courier'];
+    final route = json['route'];
     return CustomerOrderTracking(
       orderId: json['orderId']?.toString() ?? '',
       deliveryId: json['deliveryId']?.toString(),
@@ -34,6 +37,9 @@ class CustomerOrderTracking {
           : null,
       location: location is Map
           ? TrackingLocation.fromJson(location.cast<String, dynamic>())
+          : null,
+      route: route is Map
+          ? TrackingRoute.fromJson(route.cast<String, dynamic>())
           : null,
       updatedAt: _date(json['updatedAt']),
       trackingActive: json['trackingActive'] == true,
@@ -56,8 +62,84 @@ class CustomerOrderTracking {
         deliveryStatus: status,
         courier: courier,
         location: nextLocation ?? location,
+        route: route,
         updatedAt: publishedAt,
         trackingActive: active,
         stale: nextLocation == null ? stale : false,
       );
+
+  CustomerOrderTracking withLocation(TrackingLocation? newestLocation) =>
+      CustomerOrderTracking(
+        orderId: orderId,
+        deliveryId: deliveryId,
+        deliveryStatus: deliveryStatus,
+        courier: courier,
+        location: newestLocation,
+        route: route,
+        updatedAt: updatedAt,
+        trackingActive: trackingActive,
+        stale: stale,
+      );
+}
+
+class TrackingRoute {
+  const TrackingRoute({
+    required this.polyline,
+    required this.provider,
+    required this.originLatitude,
+    required this.originLongitude,
+    required this.destinationLatitude,
+    required this.destinationLongitude,
+    this.generatedAt,
+  });
+
+  final String polyline;
+  final String provider;
+  final DateTime? generatedAt;
+  final double originLatitude;
+  final double originLongitude;
+  final double destinationLatitude;
+  final double destinationLongitude;
+
+  factory TrackingRoute.fromJson(Map<String, dynamic> json) => TrackingRoute(
+        polyline: json['polyline']?.toString() ?? '',
+        provider: json['provider']?.toString() ?? '',
+        generatedAt: CustomerOrderTracking._date(json['generatedAt']),
+        originLatitude: (json['originLatitude'] as num).toDouble(),
+        originLongitude: (json['originLongitude'] as num).toDouble(),
+        destinationLatitude: (json['destinationLatitude'] as num).toDouble(),
+        destinationLongitude: (json['destinationLongitude'] as num).toDouble(),
+      );
+}
+
+List<({double latitude, double longitude})> decodePolyline(String encoded) {
+  final points = <({double latitude, double longitude})>[];
+  var index = 0;
+  var latitude = 0;
+  var longitude = 0;
+  while (index < encoded.length) {
+    final lat = _decodeCoordinate(encoded, index);
+    index = lat.nextIndex;
+    latitude += lat.delta;
+    if (index >= encoded.length) break;
+    final lon = _decodeCoordinate(encoded, index);
+    index = lon.nextIndex;
+    longitude += lon.delta;
+    points.add((latitude: latitude / 1e5, longitude: longitude / 1e5));
+  }
+  return points;
+}
+
+({int delta, int nextIndex}) _decodeCoordinate(String encoded, int start) {
+  var result = 0;
+  var shift = 0;
+  var index = start;
+  int byte;
+  do {
+    if (index >= encoded.length) return (delta: 0, nextIndex: index);
+    byte = encoded.codeUnitAt(index++) - 63;
+    result |= (byte & 0x1f) << shift;
+    shift += 5;
+  } while (byte >= 0x20);
+  return (delta: (result & 1) == 1 ? ~(result >> 1) : result >> 1, nextIndex: index);
 }

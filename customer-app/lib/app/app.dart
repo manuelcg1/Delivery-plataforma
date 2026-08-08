@@ -12,19 +12,22 @@ import '../features/home/presentation/home_page.dart';
 import '../features/orders/presentation/commerce_pages.dart';
 import 'theme/app_theme.dart';
 import '../core/lifecycle/app_lifecycle_coordinator.dart';
+import '../core/widgets/cart_feedback.dart';
 
 class CustomerApp extends ConsumerWidget {
   const CustomerApp({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(authControllerProvider);
-    final connection=ref.watch(appConnectionStatusProvider);
-    ref.listen(authControllerProvider,(previous,next) {
-      if(previous?.value==null && next.value!=null) {
+    final connection = ref.watch(appConnectionStatusProvider);
+    ref.listen(authControllerProvider, (previous, next) {
+      if (previous?.value == null && next.value != null) {
         ref.read(appLifecycleCoordinatorProvider).recover();
       }
     });
-    return AppLifecycleCoordinatorHost(child: MaterialApp(
+    return AppLifecycleCoordinatorHost(
+        child: MaterialApp(
+      scaffoldMessengerKey: cartFeedbackMessengerKey,
       debugShowCheckedModeBanner: false,
       title: 'Delivery',
       theme: AppTheme.light(),
@@ -37,11 +40,12 @@ class CustomerApp extends ConsumerWidget {
         loading: () => const SplashPage(),
         error: (_, __) => const AuthPage(),
       ),
-      builder:(context,child)=>Column(children:[
-        if(session.value!=null && connection!=AppConnectionStatus.online &&
-            connection!=AppConnectionStatus.checking)
-          _ConnectionBanner(status:connection),
-        Expanded(child:child??const SizedBox.shrink()),
+      builder: (context, child) => Column(children: [
+        if (session.value != null &&
+            connection != AppConnectionStatus.online &&
+            connection != AppConnectionStatus.checking)
+          _ConnectionBanner(status: connection),
+        Expanded(child: child ?? const SizedBox.shrink()),
       ]),
     ));
   }
@@ -83,11 +87,11 @@ class _MainShellState extends ConsumerState<MainShell> {
   void initState() {
     super.initState();
     Future.microtask(() async {
-      final api=ref.read(apiClientProvider);
-      notifications=CourierNotificationService(api,CourierRepository(api),
-        onOpenDelivery: (_) async {
-          if(mounted) ref.read(customerMainTabProvider.notifier).state=2;
-        });
+      final api = ref.read(apiClientProvider);
+      notifications = CourierNotificationService(api, CourierRepository(api),
+          onOpenDelivery: (_) async {
+        if (mounted) ref.read(customerMainTabProvider.notifier).state = 2;
+      });
       await notifications!.initialize();
     });
   }
@@ -97,6 +101,7 @@ class _MainShellState extends ConsumerState<MainShell> {
     notifications?.dispose();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
     final index = ref.watch(customerMainTabProvider);
@@ -196,17 +201,26 @@ class _MainShellState extends ConsumerState<MainShell> {
 class _ConnectionBanner extends StatelessWidget {
   const _ConnectionBanner({required this.status});
   final AppConnectionStatus status;
-  @override Widget build(BuildContext context) {
-    final message=switch(status) {
-      AppConnectionStatus.checking=>'Comprobando conexión…',
-      AppConnectionStatus.offline=>'Sin conexión a Internet.',
-      AppConnectionStatus.backendUnavailable=>'No pudimos conectar con Cerka. Intenta nuevamente.',
-      AppConnectionStatus.sessionExpired=>'Tu sesión expiró. Inicia sesión nuevamente.',
-      AppConnectionStatus.realtimeDisconnected=>'Reconectando seguimiento…',
-      AppConnectionStatus.online=>'',
+  @override
+  Widget build(BuildContext context) {
+    final message = switch (status) {
+      AppConnectionStatus.checking => 'Comprobando conexión…',
+      AppConnectionStatus.offline => 'Sin conexión a Internet.',
+      AppConnectionStatus.backendUnavailable =>
+        'No pudimos conectar con Cerka. Intenta nuevamente.',
+      AppConnectionStatus.sessionExpired =>
+        'Tu sesión expiró. Inicia sesión nuevamente.',
+      AppConnectionStatus.realtimeDisconnected => 'Reconectando seguimiento…',
+      AppConnectionStatus.online => '',
     };
-    return Material(color:const Color(0xFFFFF3CD),child:SafeArea(bottom:false,child:
-      Padding(padding:const EdgeInsets.symmetric(horizontal:16,vertical:8),child:Text(message,textAlign:TextAlign.center))));
+    return Material(
+        color: const Color(0xFFFFF3CD),
+        child: SafeArea(
+            bottom: false,
+            child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(message, textAlign: TextAlign.center))));
   }
 }
 

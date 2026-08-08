@@ -42,7 +42,12 @@ public class CustomerOrderTrackingService {
                 .compareTo(staleThreshold) > 0;
         CourierTrackingSummary courier = row.courierId() == null ? null
                 : new CourierTrackingSummary(row.courierId(), row.courierName());
+        TrackingRouteResponse route = active && row.routePolyline() != null && !row.routePolyline().isBlank()
+                ? new TrackingRouteResponse(row.routePolyline(), row.routeProvider(), row.routeGeneratedAt(),
+                        row.originLatitude(), row.originLongitude(),
+                        row.destinationLatitude(), row.destinationLongitude())
+                : null;
         return new CustomerOrderTrackingResponse(row.orderId(), row.deliveryId(), row.status(), courier,
-                location, location == null ? null : row.receivedAt(), active, stale);
+                location, route, location == null ? null : row.receivedAt(), active, stale);
     }
 }

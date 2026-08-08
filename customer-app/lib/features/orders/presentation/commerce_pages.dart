@@ -482,7 +482,6 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                   ? null
                   : () async {
                       setState(() => busy = true);
-                      final messenger = ScaffoldMessenger.of(context);
                       final navigator = Navigator.of(context);
                       final repository = ref.read(commerceRepositoryProvider);
                       try {
@@ -492,18 +491,18 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                           productId: widget.product.id,
                           quantity: quantity,
                         );
-                        ref.invalidate(cartProvider);
                         if (!context.mounted) return;
-                        navigator.pop(
-                          ProductAddedResult(
-                            productName: widget.product.name,
-                            quantity: quantity,
-                          ),
-                        );
+                        navigator.pop(ProductAddedResult(
+                          productName: widget.product.name,
+                          quantity: quantity,
+                        ));
                       } catch (error) {
                         if (context.mounted) {
                           showCartErrorSnackBar(
-                              messenger, repository.errorMessage(error));
+                            cartFeedbackMessengerKey.currentState ??
+                                ScaffoldMessenger.of(context),
+                            repository.errorMessage(error),
+                          );
                         }
                       } finally {
                         if (mounted) setState(() => busy = false);

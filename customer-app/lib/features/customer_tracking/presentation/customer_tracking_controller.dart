@@ -128,10 +128,13 @@ class CustomerOrderTrackingController
       if (!_started || _orderId != orderId) return;
       final currentGps = state.tracking?.location?.gpsTimestamp;
       final incomingGps = tracking.location?.gpsTimestamp;
-      final selected = currentGps != null &&
+      final preserveCurrentLocation = currentGps != null &&
               (incomingGps == null || !incomingGps.isAfter(currentGps))
-          ? state.tracking!
-          : tracking;
+          ? state.tracking!.location
+          : null;
+      final selected = preserveCurrentLocation == null
+          ? tracking
+          : tracking.withLocation(preserveCurrentLocation);
       state = state.copyWith(
         loading: false,
         tracking: selected,

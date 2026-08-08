@@ -90,6 +90,12 @@ delivery:
     courier-to-merchant-minutes: ${DELIVERY_ETA_COURIER_TO_MERCHANT_MINUTES:10}
     average-speed-kph: ${DELIVERY_ETA_AVERAGE_SPEED_KPH:25}
     uncertainty-minutes: ${DELIVERY_ETA_UNCERTAINTY_MINUTES:5}
+routing:
+  enabled: ${ROUTING_ENABLED:true}
+  provider: ${ROUTE_PROVIDER:OSRM}
+  osrm:
+    base-url: ${OSRM_BASE_URL:https://router.project-osrm.org}
+  retry-delay-ms: ${ROUTE_RETRY_DELAY_MS:60000}
 notifications:
   firebase-enabled: ${FIREBASE_ENABLED:false}
   firebase-project-id: ${FIREBASE_PROJECT_ID:cerka-delivery}

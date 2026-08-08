@@ -64,10 +64,20 @@ class CustomerOrderTrackingServiceTest {
     }
 
     @Test void deliveredOrderIsInactiveAndMayReturnFinalLocation() {
-        when(repository.findOwned(tenant, customer, order)).thenReturn(Optional.of(row("DELIVERED", now.minusSeconds(5))));
+        when(repository.findOwned(tenant, customer, order)).thenReturn(Optional.of(rowWithRoute("DELIVERED")));
         var response = service.getTracking(order, principal);
         assertThat(response.trackingActive()).isFalse();
         assertThat(response.location()).isNotNull();
+        assertThat(response.route()).isNull();
+    }
+
+    @Test void activeOrderReturnsStoredRouteWithoutRegeneratingIt() {
+        when(repository.findOwned(tenant, customer, order)).thenReturn(Optional.of(rowWithRoute("IN_TRANSIT")));
+        var route = service.getTracking(order, principal).route();
+        assertThat(route.polyline()).isEqualTo("encoded-route");
+        assertThat(route.provider()).isEqualTo("OSRM");
+        assertThat(route.originLatitude()).isEqualTo(-12.04);
+        verify(repository).findOwned(tenant, customer, order);
     }
 
     @Test void cancelledOrderIsInactive() {
@@ -103,5 +113,11 @@ class CustomerOrderTrackingServiceTest {
                 located ? -12.0464 : null, located ? -77.0428 : null, located ? 25.0 : null,
                 located ? 180.0 : null, located ? 8.0 : null, located ? 120.0 : null,
                 gpsTimestamp, located ? gpsTimestamp.plusSeconds(1) : null);
+    }
+
+    private TrackingSnapshot rowWithRoute(String status) {
+        return new TrackingSnapshot(order, UUID.randomUUID(), status, UUID.randomUUID(), "Carlos M.",
+                -12.0464, -77.0428, 25.0, 180.0, 8.0, 120.0, now.minusSeconds(5), now.minusSeconds(4),
+                "encoded-route", "OSRM", now.minusSeconds(10), -12.04, -77.03, -12.0464, -77.0428);
     }
 }

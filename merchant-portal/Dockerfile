@@ -5,7 +5,7 @@ RUN npm ci --no-audit --no-fund
 FROM node:20.19.5-alpine3.21 AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL=http://localhost:8080
-ARG NEXT_PUBLIC_WS_URL=ws://localhost:8080/ws
+ARG NEXT_PUBLIC_WS_URL=ws://localhost:8080/api/v1/realtime
 ARG API_INTERNAL_URL=http://backend:8080
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL API_INTERNAL_URL=$API_INTERNAL_URL
 COPY --from=deps /app/node_modules ./node_modules

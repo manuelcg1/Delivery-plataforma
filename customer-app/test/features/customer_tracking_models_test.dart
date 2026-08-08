@@ -20,6 +20,15 @@ void main() {
       'deliveryStatus': 'IN_TRANSIT',
       'courier': {'courierId': 'courier', 'displayName': 'Carlos M.'},
       'location': location,
+      'route': {
+        'polyline': '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
+        'provider': 'OSRM',
+        'generatedAt': '2026-07-31T20:29:00Z',
+        'originLatitude': 38.5,
+        'originLongitude': -120.2,
+        'destinationLatitude': 43.252,
+        'destinationLongitude': -126.453,
+      },
       'updatedAt': '2026-07-31T20:30:01Z',
       'trackingActive': true,
       'stale': false,
@@ -27,6 +36,9 @@ void main() {
     expect(tracking.location!.latitude, -12.0);
     expect(tracking.location!.gpsTimestamp.isUtc, isTrue);
     expect(tracking.stale, isFalse);
+    expect(tracking.route!.provider, 'OSRM');
+    expect(decodePolyline(tracking.route!.polyline), hasLength(3));
+    expect(decodePolyline(tracking.route!.polyline).first.latitude, 38.5);
   });
 
   test('parsea tracking activo todavía sin ubicación', () {

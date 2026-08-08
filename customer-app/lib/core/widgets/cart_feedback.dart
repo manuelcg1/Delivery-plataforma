@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
 
+final cartFeedbackMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 void showProductAddedSnackBar(
   ScaffoldMessengerState messenger, {
   required String productName,
   required int quantity,
-  required VoidCallback onViewCart,
 }) {
-  final colors = Theme.of(messenger.context).colorScheme;
   messenger
-    ..hideCurrentSnackBar()
+    ..removeCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4),
-        backgroundColor: colors.inverseSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        duration: const Duration(seconds: 3),
+        backgroundColor: const Color(0xFF06163A),
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         content: Row(
           children: [
-            Icon(Icons.check_circle, color: colors.primaryContainer),
+            const Icon(Icons.check_circle, color: Color(0xFF16A34A)),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -26,22 +27,15 @@ void showProductAddedSnackBar(
                 children: [
                   Text('Producto agregado',
                       style: TextStyle(
-                          color: colors.onInverseSurface,
-                          fontWeight: FontWeight.w700)),
+                          color: Colors.white, fontWeight: FontWeight.w700)),
                   Text('$quantity × $productName',
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color:
-                              colors.onInverseSurface.withValues(alpha: .75))),
+                          color: Colors.white.withValues(alpha: .78))),
                 ],
               ),
             ),
           ],
-        ),
-        action: SnackBarAction(
-          label: 'Ver carrito',
-          textColor: colors.tertiaryContainer,
-          onPressed: onViewCart,
         ),
       ),
     );
@@ -51,18 +45,19 @@ void showCartErrorSnackBar(
   ScaffoldMessengerState messenger,
   String message,
 ) {
-  final colors = Theme.of(messenger.context).colorScheme;
   messenger
-    ..hideCurrentSnackBar()
+    ..removeCurrentSnackBar()
     ..showSnackBar(SnackBar(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: colors.errorContainer,
+      duration: const Duration(seconds: 3),
+      backgroundColor: const Color(0xFFDC2626),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       content: Row(children: [
-        Icon(Icons.error_outline, color: colors.onErrorContainer),
+        const Icon(Icons.error_outline, color: Colors.white),
         const SizedBox(width: 12),
         Expanded(
-            child: Text(message,
-                style: TextStyle(color: colors.onErrorContainer))),
+            child: Text(message, style: const TextStyle(color: Colors.white))),
       ]),
     ));
 }
