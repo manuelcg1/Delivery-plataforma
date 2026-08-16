@@ -36,8 +36,11 @@ class Merchant {
     required this.branchId,
     required this.branchName,
     required this.currency,
+    this.logoUrl,
+    this.bannerUrl,
   });
   final String id, code, name, description, branchId, branchName, currency;
+  final String? logoUrl, bannerUrl;
   factory Merchant.fromJson(Map<String, dynamic> j) => Merchant(
         id: j['id'] as String,
         code: j['code'] as String,
@@ -46,7 +49,14 @@ class Merchant {
         branchId: j['branchId'] as String,
         branchName: j['branchName'] as String,
         currency: j['currency'] as String,
+        logoUrl: _optionalUrl(j['logoUrl']),
+        bannerUrl: _optionalUrl(j['bannerUrl']),
       );
+}
+
+String? _optionalUrl(Object? value) {
+  final url = value?.toString().trim() ?? '';
+  return url.isEmpty ? null : url;
 }
 
 class Product {
@@ -56,15 +66,74 @@ class Product {
     required this.description,
     required this.price,
     required this.currency,
+    this.images = const <ProductImage>[],
+    this.optionGroups = const <ProductOptionGroup>[],
   });
   final String id, name, description, currency;
   final double price;
+  final List<ProductImage> images;
+  final List<ProductOptionGroup> optionGroups;
+  ProductImage? get primaryImage {
+    for (final image in images) {
+      if (image.primaryImage) return image;
+    }
+    return images.isEmpty ? null : images.first;
+  }
+
   factory Product.fromJson(Map<String, dynamic> j) => Product(
         id: j['id'] as String,
         name: j['name'] as String,
         description: j['description']?.toString() ?? '',
         price: (j['price'] as num).toDouble(),
         currency: j['currency'] as String,
+        images: (j['images'] as List<dynamic>? ?? const <dynamic>[])
+            .map(
+                (image) => ProductImage.fromJson(image as Map<String, dynamic>))
+            .toList(growable: false),
+        optionGroups: (j['optionGroups'] as List<dynamic>? ?? const <dynamic>[])
+            .map((group) => ProductOptionGroup.fromJson(group as Map<String, dynamic>))
+            .toList(growable: false),
+      );
+}
+
+class ProductOptionGroup {
+  const ProductOptionGroup({required this.id,required this.name,required this.selectionType,required this.required,required this.minimumSelections,this.maximumSelections,required this.items});
+  final String id,name,selectionType;
+  final bool required;
+  final int minimumSelections;
+  final int? maximumSelections;
+  final List<ProductOptionItem> items;
+  factory ProductOptionGroup.fromJson(Map<String,dynamic> json)=>ProductOptionGroup(
+    id:json['id'] as String,name:json['name'] as String,selectionType:json['selectionType'] as String,
+    required:json['required'] as bool? ?? false,minimumSelections:(json['minimumSelections'] as num?)?.toInt() ?? 0,
+    maximumSelections:(json['maximumSelections'] as num?)?.toInt(),
+    items:(json['items'] as List<dynamic>? ?? const []).map((item)=>ProductOptionItem.fromJson(item as Map<String,dynamic>)).toList(growable:false));
+}
+
+class ProductOptionItem {
+  const ProductOptionItem({required this.id,required this.name,required this.priceAdjustment});
+  final String id,name;
+  final double priceAdjustment;
+  factory ProductOptionItem.fromJson(Map<String,dynamic> json)=>ProductOptionItem(id:json['id'] as String,name:json['name'] as String,priceAdjustment:(json['priceAdjustment'] as num).toDouble());
+}
+
+class ProductImage {
+  const ProductImage({
+    required this.id,
+    required this.url,
+    required this.altText,
+    required this.sortOrder,
+    required this.primaryImage,
+  });
+  final String id, url, altText;
+  final int sortOrder;
+  final bool primaryImage;
+  factory ProductImage.fromJson(Map<String, dynamic> json) => ProductImage(
+        id: json['id'] as String,
+        url: json['url']?.toString() ?? '',
+        altText: json['altText']?.toString() ?? '',
+        sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+        primaryImage: json['primaryImage'] as bool? ?? false,
       );
 }
 

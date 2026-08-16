@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:delivery_customer/features/orders/data/commerce_repository.dart';
+import 'package:delivery_customer/features/home/data/customer_repository.dart';
 
 void main() {
   test('empty cart has no stale items or total', () {
@@ -53,5 +54,100 @@ void main() {
     });
     expect(event.status, 'IN_TRANSIT');
     expect(event.createdAt, '2026-07-22T15:45:00Z');
+  });
+
+  test('maps optional merchant logo and banner urls', () {
+    final merchant = Merchant.fromJson({
+      'id': 'merchant-1',
+      'code': 'tienda',
+      'name': 'Tienda',
+      'description': 'Descripción',
+      'branchId': 'branch-1',
+      'branchName': 'Principal',
+      'currency': 'PEN',
+      'logoUrl': 'https://media.example/logo.webp',
+      'bannerUrl': 'https://media.example/banner.webp',
+    });
+
+    expect(merchant.logoUrl, endsWith('logo.webp'));
+    expect(merchant.bannerUrl, endsWith('banner.webp'));
+  });
+
+  test('keeps backward compatibility when merchant images are absent', () {
+    final merchant = Merchant.fromJson({
+      'id': 'merchant-1',
+      'code': 'tienda',
+      'name': 'Tienda',
+      'description': '',
+      'branchId': 'branch-1',
+      'branchName': 'Principal',
+      'currency': 'PEN',
+    });
+
+    expect(merchant.logoUrl, isNull);
+    expect(merchant.bannerUrl, isNull);
+  });
+
+  test('maps product images and selects the declared primary image', () {
+    final product = Product.fromJson({
+      'id': 'product-1',
+      'name': 'Producto',
+      'description': 'Descripción',
+      'price': 12.5,
+      'currency': 'PEN',
+      'images': [
+        {
+          'id': 'secondary',
+          'url': 'https://media.example/secondary.webp',
+          'altText': '',
+          'sortOrder': 1,
+          'primaryImage': false,
+        },
+        {
+          'id': 'primary',
+          'url': 'https://media.example/primary.webp',
+          'altText': 'Producto',
+          'sortOrder': 0,
+          'primaryImage': true,
+        },
+      ],
+    });
+
+    expect(product.images, hasLength(2));
+    expect(product.primaryImage?.id, 'primary');
+  });
+
+  test('keeps product image compatibility with older catalog responses', () {
+    final product = Product.fromJson({
+      'id': 'product-1',
+      'name': 'Producto',
+      'description': '',
+      'price': 12.5,
+      'currency': 'PEN',
+    });
+
+    expect(product.images, isEmpty);
+    expect(product.primaryImage, isNull);
+  });
+
+  test('maps required product options and their server prices', () {
+    final product = Product.fromJson({
+      'id': 'product-1','name': 'Pizza','description': '',
+      'price': 20,'currency': 'PEN','optionGroups': [
+        {'id':'group-1','name':'Tamaño','selectionType':'SINGLE','required':true,'minimumSelections':1,'maximumSelections':1,'items':[
+          {'id':'item-1','name':'Grande','priceAdjustment':5}
+        ]}
+      ]
+    });
+    expect(product.optionGroups.single.required, isTrue);
+    expect(product.optionGroups.single.items.single.priceAdjustment, 5);
+  });
+
+  test('maps option snapshots returned with a cart item', () {
+    final item=CartItem.fromJson({'id':'cart-item','productName':'Pizza','quantity':1,'subtotal':25,'options':[
+      {'itemName':'Grande','priceAdjustment':5}
+    ]});
+    expect(item.options.single.name, 'Grande');
+    expect(item.options.single.priceAdjustment, 5);
   });
 }

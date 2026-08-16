@@ -14,16 +14,26 @@ class CartItem {
     required this.name,
     required this.quantity,
     required this.subtotal,
+    this.options = const <CartItemOption>[],
   });
   final String id, name;
   final int quantity;
   final double subtotal;
+  final List<CartItemOption> options;
   factory CartItem.fromJson(Map<String, dynamic> j) => CartItem(
         id: j['id'] as String,
         name: j['productName'] as String,
         quantity: j['quantity'] as int,
         subtotal: (j['subtotal'] as num).toDouble(),
+        options: (j['options'] as List<dynamic>? ?? const []).map((option)=>CartItemOption.fromJson(option as Map<String,dynamic>)).toList(growable:false),
       );
+}
+
+class CartItemOption {
+  const CartItemOption({required this.name,required this.priceAdjustment});
+  final String name;
+  final double priceAdjustment;
+  factory CartItemOption.fromJson(Map<String,dynamic> json)=>CartItemOption(name:json['itemName'] as String,priceAdjustment:(json['priceAdjustment'] as num).toDouble());
 }
 
 class Cart {
@@ -232,6 +242,7 @@ class CommerceRepository {
     required String branchId,
     required String productId,
     int quantity = 1,
+    List<String> optionItemIds = const <String>[],
   }) async {
     final r = await api.dio.post<Map<String, dynamic>>(
       '/api/v1/cart/items',
@@ -240,6 +251,7 @@ class CommerceRepository {
         'branchId': branchId,
         'productId': productId,
         'quantity': quantity,
+        'optionItemIds': optionItemIds,
       },
     );
     await OfflineCache.write('cart:last', r.data!);

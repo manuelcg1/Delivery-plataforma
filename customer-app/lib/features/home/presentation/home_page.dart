@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/providers.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../auth/presentation/auth_controller.dart';
@@ -257,46 +258,120 @@ class _MerchantHomeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _HomeCard(
         onTap: onTap,
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Hero(
-              tag: 'merchant-avatar-${merchant.id}',
-              child: _HomeIconBox(
-                text: merchant.name.substring(0, 1).toUpperCase(),
-                background: const Color(0xFFF0EEFF),
-                foreground: const Color(0xFF4F46E5),
-              ),
+            Row(
+              children: [
+                Hero(
+                  tag: 'merchant-avatar-${merchant.id}',
+                  child: _MerchantLogo(merchant: merchant),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(merchant.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                            color: _homePrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          )),
+                      const SizedBox(height: 2),
+                      Text('${merchant.branchName} · ${merchant.description}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                            color: _homeSecondary,
+                            fontSize: 12,
+                          )),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right_rounded,
+                    color: _homeNavy, size: 28),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(merchant.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.poppins(
-                        color: _homePrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      )),
-                  const SizedBox(height: 2),
-                  Text('${merchant.branchName} · ${merchant.description}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.poppins(
-                        color: _homeSecondary,
-                        fontSize: 12,
-                      )),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: _homeNavy, size: 28),
+            if (merchant.bannerUrl != null) ...[
+              const SizedBox(height: 10),
+              _MerchantBanner(url: merchant.bannerUrl!),
+            ],
           ],
         ),
       );
+}
+
+class _MerchantBanner extends StatefulWidget {
+  const _MerchantBanner({required this.url});
+  final String url;
+
+  @override
+  State<_MerchantBanner> createState() => _MerchantBannerState();
+}
+
+class _MerchantBannerState extends State<_MerchantBanner> {
+  bool failed = false;
+
+  @override
+  void didUpdateWidget(covariant _MerchantBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) failed = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (failed) return const SizedBox.shrink();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: AspectRatio(
+        aspectRatio: 16 / 6,
+        child: CachedNetworkImage(
+          imageUrl: widget.url,
+          fit: BoxFit.cover,
+          fadeInDuration: const Duration(milliseconds: 180),
+          placeholder: (_, __) => const ColoredBox(color: Color(0xFFF8FAFC)),
+          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+          errorListener: (_) {
+            if (mounted) setState(() => failed = true);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _MerchantLogo extends StatelessWidget {
+  const _MerchantLogo({required this.merchant, this.size = 48});
+  final Merchant merchant;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = _HomeIconBox(
+      text: merchant.name.isEmpty
+          ? '?'
+          : merchant.name.characters.first.toUpperCase(),
+      size: size,
+      background: const Color(0xFFF0EEFF),
+      foreground: const Color(0xFF4F46E5),
+    );
+    if (merchant.logoUrl == null) return fallback;
+    return ClipOval(
+      child: CachedNetworkImage(
+        imageUrl: merchant.logoUrl!,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => fallback,
+        errorWidget: (_, __, ___) => fallback,
+      ),
+    );
+  }
 }
 
 class _HomeCard extends StatelessWidget {
@@ -590,12 +665,7 @@ class MerchantPage extends ConsumerWidget {
           title: Row(children: [
             Hero(
               tag: 'merchant-avatar-${merchant.id}',
-              child: _HomeIconBox(
-                text: merchant.name.substring(0, 1).toUpperCase(),
-                size: 36,
-                background: const Color(0xFFF0EEFF),
-                foreground: const Color(0xFF4F46E5),
-              ),
+              child: _MerchantLogo(merchant: merchant, size: 36),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -650,10 +720,20 @@ class MerchantPage extends ConsumerWidget {
                 (product) => Card(
                   child: ListTile(
                     title: Text(product.name),
-                    subtitle: Text(product.description),
-                    trailing: Text(
-                      '${product.currency} ${product.price.toStringAsFixed(2)}',
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(product.description,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${product.currency} ${product.price.toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
                     ),
+                    trailing: _ProductThumbnail(product: product),
+                    contentPadding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
                     onTap: () async {
                       final result = await Navigator.of(context).push(
                         MaterialPageRoute<ProductAddedResult>(
@@ -670,6 +750,36 @@ class MerchantPage extends ConsumerWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _ProductThumbnail extends StatelessWidget {
+  const _ProductThumbnail({required this.product});
+  final Product product;
+
+  @override
+  Widget build(BuildContext context) {
+    const fallback = ColoredBox(
+      color: Color(0xFFDBEAFE),
+      child: Center(
+        child: Icon(Icons.restaurant, color: Color(0xFF2563EB), size: 32),
+      ),
+    );
+    final image = product.primaryImage;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox.square(
+        dimension: 82,
+        child: image == null || image.url.isEmpty
+            ? fallback
+            : CachedNetworkImage(
+                imageUrl: image.url,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => fallback,
+                errorWidget: (_, __, ___) => fallback,
+              ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 package com.delivery.platform.customer.api;
 
 import com.delivery.platform.common.ApiException;
+import com.delivery.platform.catalog.media.infrastructure.MinioCatalogStorage;
 import com.delivery.platform.identity.security.IdentityPrincipal;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
@@ -19,13 +20,14 @@ import java.util.UUID;
 @PreAuthorize("hasRole('CUSTOMER')")
 public class CustomerMobileController {
     private final JdbcClient db;
-    public CustomerMobileController(JdbcClient db){this.db=db;}
+    private final MinioCatalogStorage storage;
+    public CustomerMobileController(JdbcClient db,MinioCatalogStorage storage){this.db=db;this.storage=storage;}
 
     public record Profile(UUID id,String firstName,String lastName,String email){}
     public record ProfileRequest(@NotBlank @Size(max=100) String firstName,@NotBlank @Size(max=100) String lastName){}
     public record Address(UUID id,String label,String recipientName,String phone,String addressLine,String formattedAddress,String placeId,BigDecimal latitude,BigDecimal longitude,String street,String streetNumber,String district,String city,String province,String region,String postalCode,String countryCode,String apartment,String reference,String deliveryInstructions,String locationSource,boolean isDefault){}
     public record AddressRequest(@NotBlank @Size(max=80) String label,@NotBlank @Size(max=160) String recipientName,@NotBlank @Size(max=40) String phone,@NotBlank @Size(max=500) String formattedAddress,@Size(max=255) String placeId,@NotNull @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,@NotNull @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,@Size(max=160) String street,@Size(max=40) String streetNumber,@Size(max=100) String district,@Size(max=100) String city,@Size(max=100) String province,@Size(max=100) String region,@Size(max=20) String postalCode,@NotBlank @Pattern(regexp="PE") String countryCode,@Size(max=80) String apartment,@Size(max=255) String reference,@Size(max=500) String deliveryInstructions,@NotBlank @Pattern(regexp="SEARCH|MAP|CURRENT") String locationSource,boolean isDefault){}
-    public record Merchant(UUID id,String code,String name,String description,String merchantType,String currency,UUID branchId,String branchName,String district,BigDecimal minimumOrderAmount,Integer preparationTimeMinutes){}
+    public record Merchant(UUID id,String code,String name,String description,String merchantType,String currency,UUID branchId,String branchName,String district,BigDecimal minimumOrderAmount,Integer preparationTimeMinutes,String logoUrl,String bannerUrl){}
 
     @GetMapping("/me") Profile me(@AuthenticationPrincipal IdentityPrincipal p){return db.sql("select id,first_name,last_name,email from users where id=:id and tenant_id=:tenant").param("id",p.userId()).param("tenant",p.tenantId()).query(Profile.class).single();}
     @PutMapping("/me") @Transactional Profile update(@AuthenticationPrincipal IdentityPrincipal p,@Valid @RequestBody ProfileRequest q){db.sql("update users set first_name=:first,last_name=:last,updated_at=now() where id=:id and tenant_id=:tenant").param("first",q.firstName().trim()).param("last",q.lastName().trim()).param("id",p.userId()).param("tenant",p.tenantId()).update();return me(p);}
@@ -36,7 +38,7 @@ public class CustomerMobileController {
     @DeleteMapping("/addresses/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) @Transactional void delete(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id){ownedAddress(p,id);db.sql("update delivery_addresses set active=false,is_default=false,updated_at=now() where id=:id and tenant_id=:tenant and customer_id=:user").param("id",id).param("tenant",p.tenantId()).param("user",p.userId()).update();}
     @PatchMapping("/addresses/{id}/default") @Transactional Address makeDefault(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id){ownedAddress(p,id);clearDefault(p);db.sql("update delivery_addresses set is_default=true,updated_at=now() where id=:id and tenant_id=:tenant and customer_id=:user").param("id",id).param("tenant",p.tenantId()).param("user",p.userId()).update();return address(p,id);}
 
-    @GetMapping("/merchants") List<Merchant> merchants(@AuthenticationPrincipal IdentityPrincipal p,@RequestParam(defaultValue="") String search){return db.sql("select m.id,m.code,m.name,m.description,m.merchant_type,m.default_currency currency,b.id branch_id,b.name branch_name,b.district,b.minimum_order_amount,b.preparation_time_minutes from merchants m join lateral(select * from branches where tenant_id=m.tenant_id and merchant_id=m.id and status='ACTIVE' order by created_at limit 1)b on true where m.tenant_id=:tenant and m.status='ACTIVE' and (:search='' or lower(m.name||' '||coalesce(m.description,'')) like lower('%'||:search||'%')) order by m.name").param("tenant",p.tenantId()).param("search",search).query(Merchant.class).list();}
+    @GetMapping("/merchants") List<Merchant> merchants(@AuthenticationPrincipal IdentityPrincipal p,@RequestParam(defaultValue="") String search){return db.sql("select m.id,m.code,m.name,m.description,m.merchant_type,m.default_currency currency,b.id branch_id,b.name branch_name,b.district,b.minimum_order_amount,b.preparation_time_minutes,m.logo_object_key,m.banner_object_key from merchants m join lateral(select * from branches where tenant_id=m.tenant_id and merchant_id=m.id and status='ACTIVE' order by created_at limit 1)b on true where m.tenant_id=:tenant and m.status='ACTIVE' and (:search='' or lower(m.name||' '||coalesce(m.description,'')) like lower('%'||:search||'%')) order by m.name").param("tenant",p.tenantId()).param("search",search).query((r,n)->new Merchant(r.getObject("id",UUID.class),r.getString("code"),r.getString("name"),r.getString("description"),r.getString("merchant_type"),r.getString("currency"),r.getObject("branch_id",UUID.class),r.getString("branch_name"),r.getString("district"),r.getBigDecimal("minimum_order_amount"),(Integer)r.getObject("preparation_time_minutes"),mediaUrl(r.getString("logo_object_key")),mediaUrl(r.getString("banner_object_key")))).list();}
 
     private Address address(IdentityPrincipal p,UUID id){return db.sql(addressSelect()+" where id=:id and tenant_id=:tenant and customer_id=:user and active").param("id",id).param("tenant",p.tenantId()).param("user",p.userId()).query(Address.class).optional().orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND,"ADDRESS_NOT_FOUND","Dirección no encontrada"));}
     private void ownedAddress(IdentityPrincipal p,UUID id){address(p,id);}
@@ -44,4 +46,5 @@ public class CustomerMobileController {
     private String addressSelect(){return "select id,label,recipient_name,phone,address_line,coalesce(formatted_address,address_line) formatted_address,place_id,latitude,longitude,street,street_number,district,city,province,region,postal_code,country_code,apartment,reference,delivery_instructions,location_source,is_default from delivery_addresses";}
     private void validate(AddressRequest q){if("SEARCH".equals(q.locationSource())&&(q.placeId()==null||q.placeId().isBlank()))throw new ApiException(HttpStatus.BAD_REQUEST,"PLACE_ID_REQUIRED","La dirección seleccionada desde búsqueda requiere placeId");}
     private String clean(String value){return value==null||value.isBlank()?null:value.trim();}
+    private String mediaUrl(String key){return key==null||key.isBlank()?null:storage.signedUrl(key);}
 }

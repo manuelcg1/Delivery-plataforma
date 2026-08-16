@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/providers.dart';
@@ -433,24 +434,27 @@ class ProductAddedResult {
 
 class _ProductPageState extends ConsumerState<ProductPage> {
   int quantity = 1;
+  int imageIndex = 0;
   bool busy = false;
+  final Set<String> selectedOptions = <String>{};
+
+  bool get validOptions => widget.product.optionGroups.every((group) {
+    final count=group.items.where((item)=>selectedOptions.contains(item.id)).length;
+    final minimum=group.required ? (group.minimumSelections < 1 ? 1 : group.minimumSelections) : group.minimumSelections;
+    return count>=minimum && (group.maximumSelections==null || count<=group.maximumSelections!) && (group.selectionType!='SINGLE' || count<=1);
+  });
+  double get optionsTotal => widget.product.optionGroups.expand((group)=>group.items).where((item)=>selectedOptions.contains(item.id)).fold(0,(total,item)=>total+item.priceAdjustment);
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: Text(widget.product.name)),
         body: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Container(
-              height: 220,
-              decoration: BoxDecoration(
-                color: const Color(0xFFDBEAFE),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.restaurant,
-                size: 72,
-                color: Color(0xFF2563EB),
-              ),
+            _ProductGallery(
+              product: widget.product,
+              currentIndex: imageIndex,
+              onPageChanged: (value) => setState(() => imageIndex = value),
             ),
             const SizedBox(height: 20),
             Text(
@@ -460,9 +464,33 @@ class _ProductPageState extends ConsumerState<ProductPage> {
             Text(widget.product.description),
             const SizedBox(height: 12),
             Text(
-              '${widget.product.currency} ${(widget.product.price * quantity).toStringAsFixed(2)}',
+              '${widget.product.currency} ${((widget.product.price + optionsTotal) * quantity).toStringAsFixed(2)}',
               style: Theme.of(context).textTheme.titleLarge,
             ),
+            if(widget.product.optionGroups.isNotEmpty)...[
+              const SizedBox(height:16),
+              ...widget.product.optionGroups.map((group)=>Card(
+                child:Padding(
+                  padding:const EdgeInsets.all(8),
+                  child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                    Padding(padding:const EdgeInsets.fromLTRB(8,6,8,2),child:Text('${group.name}${group.required ? ' *' : ''}',style:Theme.of(context).textTheme.titleMedium)),
+                    Padding(padding:const EdgeInsets.symmetric(horizontal:8),child:Text(group.required?'Selección obligatoria':'Opcional',style:Theme.of(context).textTheme.bodySmall)),
+                    ...group.items.map((item){
+                      final checked=selectedOptions.contains(item.id);
+                      final price=item.priceAdjustment==0?'Gratis':'+ ${widget.product.currency} ${item.priceAdjustment.toStringAsFixed(2)}';
+                      void change(bool value){setState((){
+                        if(group.selectionType=='SINGLE'){
+                          selectedOptions.removeAll(group.items.map((candidate)=>candidate.id));
+                        }
+                        if(value) selectedOptions.add(item.id); else selectedOptions.remove(item.id);
+                      });}
+                      return CheckboxListTile(value:checked,onChanged:(value)=>change(value??false),title:Text(item.name),subtitle:Text(price),controlAffinity:ListTileControlAffinity.leading,dense:true);
+                    }),
+                  ]),
+                ),
+              )),
+              if(!validOptions) const Padding(padding:EdgeInsets.only(bottom:8),child:Text('Completa las opciones obligatorias.',style:TextStyle(color:Colors.red))),
+            ],
             Row(
               children: [
                 IconButton(
@@ -478,7 +506,7 @@ class _ProductPageState extends ConsumerState<ProductPage> {
               ],
             ),
             FilledButton.icon(
-              onPressed: busy
+              onPressed: busy || !validOptions
                   ? null
                   : () async {
                       setState(() => busy = true);
@@ -490,6 +518,7 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                           branchId: widget.merchant.branchId,
                           productId: widget.product.id,
                           quantity: quantity,
+                          optionItemIds: selectedOptions.toList(growable:false),
                         );
                         if (!context.mounted) return;
                         ref.invalidate(cartProvider);
@@ -521,6 +550,73 @@ class _ProductPageState extends ConsumerState<ProductPage> {
           ],
         ),
       );
+}
+
+class _ProductGallery extends StatelessWidget {
+  const _ProductGallery({
+    required this.product,
+    required this.currentIndex,
+    required this.onPageChanged,
+  });
+  final Product product;
+  final int currentIndex;
+  final ValueChanged<int> onPageChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final images =
+        product.images.where((image) => image.url.isNotEmpty).toList();
+    const fallback = ColoredBox(
+      color: Color(0xFFDBEAFE),
+      child: Center(
+        child: Icon(Icons.restaurant, size: 72, color: Color(0xFF2563EB)),
+      ),
+    );
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(
+            height: 220,
+            child: images.isEmpty
+                ? fallback
+                : PageView.builder(
+                    itemCount: images.length,
+                    onPageChanged: onPageChanged,
+                    itemBuilder: (_, index) => CachedNetworkImage(
+                      imageUrl: images[index].url,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      placeholder: (_, __) => fallback,
+                      errorWidget: (_, __, ___) => fallback,
+                    ),
+                  ),
+          ),
+        ),
+        if (images.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              images.length,
+              (index) => AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                width: index == currentIndex ? 18 : 7,
+                height: 7,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  color: index == currentIndex
+                      ? Theme.of(context).colorScheme.primary
+                      : const Color(0xFFD1D5DB),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class CartPage extends ConsumerWidget {

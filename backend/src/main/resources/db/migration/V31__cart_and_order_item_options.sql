@@ -1,0 +1,13 @@
+ALTER TABLE cart_items DROP CONSTRAINT cart_items_cart_id_product_id_key;
+ALTER TABLE cart_items ADD COLUMN base_unit_price NUMERIC(12,2), ADD COLUMN options_total NUMERIC(12,2) NOT NULL DEFAULT 0, ADD COLUMN selection_signature VARCHAR(64) NOT NULL DEFAULT '';
+UPDATE cart_items SET base_unit_price=unit_price WHERE base_unit_price IS NULL;
+ALTER TABLE cart_items ALTER COLUMN base_unit_price SET NOT NULL;
+ALTER TABLE cart_items ADD CONSTRAINT uq_cart_item_selection UNIQUE(cart_id,product_id,selection_signature);
+CREATE TABLE cart_item_options (id UUID PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id UUID NOT NULL REFERENCES tenants(id),cart_item_id UUID NOT NULL REFERENCES cart_items(id) ON DELETE CASCADE,option_group_id UUID NOT NULL REFERENCES option_groups(id),option_item_id UUID NOT NULL REFERENCES option_items(id),group_name VARCHAR(160) NOT NULL,item_name VARCHAR(160) NOT NULL,price_adjustment NUMERIC(12,2) NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(cart_item_id,option_item_id),CHECK(price_adjustment>=0));
+CREATE INDEX idx_cart_item_options_owner ON cart_item_options(tenant_id,cart_item_id);
+ALTER TABLE order_items ADD COLUMN base_unit_price NUMERIC(12,2), ADD COLUMN options_total NUMERIC(12,2) NOT NULL DEFAULT 0;
+UPDATE order_items SET base_unit_price=unit_price WHERE base_unit_price IS NULL;
+ALTER TABLE order_items ALTER COLUMN base_unit_price SET NOT NULL;
+ALTER TABLE order_items ALTER COLUMN base_unit_price SET DEFAULT 0;
+CREATE TABLE order_item_options (id UUID PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id UUID NOT NULL REFERENCES tenants(id),order_item_id UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,option_group_id UUID NOT NULL,option_item_id UUID NOT NULL,group_name VARCHAR(160) NOT NULL,item_name VARCHAR(160) NOT NULL,price_adjustment NUMERIC(12,2) NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),CHECK(price_adjustment>=0));
+CREATE INDEX idx_order_item_options_owner ON order_item_options(tenant_id,order_item_id);

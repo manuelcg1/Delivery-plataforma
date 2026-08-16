@@ -9,6 +9,8 @@ import static org.mockito.Mockito.when;
 import com.delivery.platform.common.ApiException;
 import com.delivery.platform.identity.security.IdentityPrincipal;
 import com.delivery.platform.orders.application.OrdersRepository.ProductSnapshot;
+import com.delivery.platform.orders.application.OrdersRepository.OptionGroupSnapshot;
+import com.delivery.platform.orders.application.OrdersRepository.OptionSelection;
 import com.delivery.platform.orders.domain.OrderModels.Cart;
 import com.delivery.platform.orders.domain.OrderModels.CartItem;
 import java.math.BigDecimal;
@@ -48,7 +50,8 @@ class CartMerchantRuleTest {
         assertThat(result.branchId()).isEqualTo(branch);
         verify(repository).checkoutCart(tenant, oldCartId);
         verify(repository).addItem(tenant, freshEmpty.id(), product, "Producto", 1,
-                new BigDecimal("10.00"), null);
+                new BigDecimal("10.00"), java.util.List.of(),
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", null);
     }
 
     @Test
@@ -92,6 +95,17 @@ class CartMerchantRuleTest {
 
         verify(repository).clearCart(tenant, active.id());
         verify(repository).checkoutCart(tenant, active.id());
+    }
+
+    @Test
+    void requiredOptionMustBeSelectedBeforeAddingToCart() {
+        UUID merchant=UUID.randomUUID(),branch=UUID.randomUUID(),product=UUID.randomUUID(),group=UUID.randomUUID(),option=UUID.randomUUID();
+        when(repository.product(tenant,merchant,branch,product)).thenReturn(product(product,merchant));
+        when(repository.optionGroups(tenant,product)).thenReturn(List.of(new OptionGroupSnapshot(
+                group,"Tamaño","SINGLE",true,1,1,List.of(new OptionSelection(group,option,"Tamaño","Grande",new BigDecimal("5.00"))))));
+
+        assertThatThrownBy(()->service.add(principal,merchant,branch,product,1,List.of(),null))
+                .isInstanceOf(ApiException.class).hasMessageContaining("opciones obligatorias");
     }
 
     private Cart cart(UUID id, UUID merchant, UUID branch, List<CartItem> items) {

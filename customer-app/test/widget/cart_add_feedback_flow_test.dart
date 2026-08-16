@@ -104,7 +104,8 @@ class _FakeCommerceRepository extends CommerceRepository {
       {required String merchantId,
       required String branchId,
       required String productId,
-      int quantity = 1}) async {
+      int quantity = 1,
+      List<String> optionItemIds = const <String>[]}) async {
     if (fail) throw StateError('failed');
     added = true;
     return cart();

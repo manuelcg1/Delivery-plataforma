@@ -13,12 +13,15 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1")
 public class MediaController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MediaController.class);
     private final JdbcClient db;
     private final CatalogSupport support;
     private final MinioCatalogStorage storage;
@@ -50,12 +53,13 @@ public class MediaController {
                 .param("t", p.tenantId()).param("p", productId).query(Integer.class).single();
         if (count >= 8) throw new ApiException(HttpStatus.CONFLICT, "PRODUCT_IMAGE_LIMIT", "Un producto puede tener hasta 8 imágenes");
         String key = storage.put(p.tenantId(), "products/" + productId, file);
+        deleteOnRollback(key);
         UUID id = UUID.randomUUID();
         try {
             db.sql("insert into product_images(id,tenant_id,product_id,object_key,alt_text,sort_order,primary_image) values(:i,:t,:p,:k,:a,:o,:m)")
                     .param("i", id).param("t", p.tenantId()).param("p", productId).param("k", key)
                     .param("a", altText).param("o", count).param("m", count == 0).update();
-        } catch (RuntimeException error) { storage.delete(key); throw error; }
+        } catch (RuntimeException error) { if (!TransactionSynchronizationManager.isSynchronizationActive()) safeDelete(key); throw error; }
         support.audit(p, "PRODUCT_IMAGE_UPLOADED", "PRODUCT_IMAGE", id);
         return one(p, id);
     }
@@ -84,7 +88,8 @@ public class MediaController {
         if (owned(p, productId, imageId) == 0) throw missing();
         db.sql("update product_images set primary_image=false where product_id=:p and tenant_id=:t")
                 .param("p", productId).param("t", p.tenantId()).update();
-        db.sql("update product_images set primary_image=true where id=:i").param("i", imageId).update();
+        db.sql("update product_images set primary_image=true where id=:i and product_id=:p and tenant_id=:t")
+                .param("i", imageId).param("p", productId).param("t", p.tenantId()).update();
         support.audit(p, "PRODUCT_PRIMARY_IMAGE_CHANGED", "PRODUCT_IMAGE", imageId);
         return one(p, imageId);
     }
@@ -98,8 +103,8 @@ public class MediaController {
         Image image = one(p, imageId);
         if (!image.productId().equals(productId)) throw missing();
         db.sql("delete from product_images where id=:i and tenant_id=:t").param("i", imageId).param("t", p.tenantId()).update();
-        if (image.primaryImage()) db.sql("update product_images set primary_image=true where id=(select id from product_images where product_id=:p order by sort_order,created_at limit 1)").param("p", productId).update();
-        storage.delete(image.objectKey());
+        if (image.primaryImage()) db.sql("update product_images set primary_image=true where id=(select id from product_images where tenant_id=:t and product_id=:p order by sort_order,created_at limit 1) and tenant_id=:t").param("t",p.tenantId()).param("p", productId).update();
+        deleteAfterCommit(image.objectKey());
         support.audit(p, "PRODUCT_IMAGE_DELETED", "PRODUCT_IMAGE", imageId);
     }
 
@@ -117,4 +122,20 @@ public class MediaController {
                 storage.signedUrl(key), rs.getString("alt_text"), rs.getInt("sort_order"), rs.getBoolean("primary_image"));
     }
     private ApiException missing() { return new ApiException(HttpStatus.NOT_FOUND, "PRODUCT_IMAGE_NOT_FOUND", "Imagen no encontrada"); }
+    private void deleteOnRollback(String key) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCompletion(int status) { if (status != STATUS_COMMITTED) safeDelete(key); }
+        });
+    }
+    private void deleteAfterCommit(String key) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) { safeDelete(key); return; }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCommit() { safeDelete(key); }
+        });
+    }
+    private void safeDelete(String key) {
+        try { storage.delete(key); }
+        catch (RuntimeException error) { log.warn("No se pudo limpiar la imagen de producto {}",key,error); }
+    }
 }
