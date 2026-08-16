@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 public class DeliveryCoverageService {
     private static final Logger log = LoggerFactory.getLogger(DeliveryCoverageService.class);
     private static final double EARTH_RADIUS_KM = 6371.0088;
-    private static final BigDecimal DEFAULT_DELIVERY_FEE = new BigDecimal("5.00");
+    private static final BigDecimal DEFAULT_BASE_FEE = BigDecimal.ZERO;
+    private static final BigDecimal DEFAULT_FEE_PER_KM = new BigDecimal("2.00");
+    private static final BigDecimal BILLING_INCREMENT_KM = new BigDecimal("0.50");
     private final JdbcClient db;
     private final DeliveryEtaService etaService;
 
@@ -107,18 +109,18 @@ public class DeliveryCoverageService {
                     "Este comercio todavía no realiza entregas en esta ubicación.");
         }
 
-        Optional<Rate> configuredRate = db.sql("select z.id,coalesce(r.base_fee,z.base_delivery_fee) base_fee,coalesce(r.fee_per_km,0) fee_per_km,r.minimum_fee,r.maximum_fee,r.free_delivery_threshold from delivery_zones z left join lateral(select * from delivery_rates where delivery_zone_id=z.id and active order by created_at desc limit 1) r on true where z.tenant_id=:t and z.merchant_id=:m and (z.branch_id is null or z.branch_id=:b) and z.active order by (z.branch_id is not null) desc limit 1")
+        Optional<Rate> configuredRate = db.sql("select z.id,coalesce(r.base_fee,z.base_delivery_fee) base_fee,coalesce(r.fee_per_km,2.00) fee_per_km,r.minimum_fee,r.maximum_fee,r.free_delivery_threshold from delivery_zones z left join lateral(select * from delivery_rates where delivery_zone_id=z.id and active order by created_at desc limit 1) r on true where z.tenant_id=:t and z.merchant_id=:m and (z.branch_id is null or z.branch_id=:b) and z.active order by (z.branch_id is not null) desc limit 1")
                 .param("t", tenant).param("m", merchant).param("b", branch)
                 .query((result, row) -> new Rate(result.getObject("id", UUID.class),
                         result.getBigDecimal("base_fee"), result.getBigDecimal("fee_per_km"),
                         result.getBigDecimal("minimum_fee"), result.getBigDecimal("maximum_fee"),
                         result.getBigDecimal("free_delivery_threshold"))).optional();
         boolean fallbackApplied = configuredRate.isEmpty();
-        Rate rate = configuredRate.orElse(new Rate(null, DEFAULT_DELIVERY_FEE,
-                BigDecimal.ZERO, null, null, null));
+        Rate rate = configuredRate.orElse(new Rate(null, DEFAULT_BASE_FEE,
+                DEFAULT_FEE_PER_KM, null, null, null));
         if (fallbackApplied) {
-            log.warn("delivery rate fallback applied merchantId={} branchId={} fee={}",
-                    merchant, branch, DEFAULT_DELIVERY_FEE);
+            log.warn("delivery rate fallback applied merchantId={} branchId={} baseFee={} feePerKm={}",
+                    merchant, branch, DEFAULT_BASE_FEE, DEFAULT_FEE_PER_KM);
         }
         boolean freeDeliveryApplied = rate.freeDeliveryThreshold() != null
                 && subtotal.compareTo(rate.freeDeliveryThreshold()) >= 0;
@@ -191,7 +193,10 @@ public class DeliveryCoverageService {
                                            BigDecimal distanceKm, BigDecimal minimumFee,
                                            BigDecimal maximumFee, BigDecimal freeThreshold,
                                            BigDecimal subtotal) {
-        BigDecimal fee = baseFee.add(distanceKm.multiply(feePerKm));
+        BigDecimal billableDistance = distanceKm.max(BigDecimal.ZERO)
+                .divide(BILLING_INCREMENT_KM, 0, RoundingMode.CEILING)
+                .multiply(BILLING_INCREMENT_KM);
+        BigDecimal fee = baseFee.add(billableDistance.multiply(feePerKm));
         if (minimumFee != null) fee = fee.max(minimumFee);
         if (maximumFee != null) fee = fee.min(maximumFee);
         if (freeThreshold != null && subtotal.compareTo(freeThreshold) >= 0) fee = BigDecimal.ZERO;

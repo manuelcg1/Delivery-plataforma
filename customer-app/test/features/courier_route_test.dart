@@ -12,6 +12,10 @@ void main() {
       'orderNumber': 'CERKA-2485',
       'customerName': 'Juan Pérez',
       'destinationAddress': 'Av. Larco 245',
+      'merchantName': 'Sucursal Centro',
+      'merchantDisplayName': 'Restaurante El Buen Sabor',
+      'branchName': 'Sucursal Centro',
+      'merchantAddress': 'Av. España 1245',
       'originLatitude': -12.1,
       'originLongitude': -77.1,
       'destinationLatitude': -12.2,
@@ -28,6 +32,8 @@ void main() {
     expect(route.routeProvider, 'OSRM');
     expect(route.distanceKm, 3.8);
     expect(route.etaMinutes, 12);
+    expect(route.merchantDisplayName, 'Restaurante El Buen Sabor');
+    expect(route.branchName, 'Sucursal Centro');
   });
 
   test('navegación usa Google, luego Waze y finalmente web', () async {
@@ -92,5 +98,76 @@ void main() {
     await tester.pump();
 
     expect(destination, (-12.2, -77.2));
+  });
+
+  testWidgets('aceptado muestra comercio y abre la ubicación de recojo',
+      (tester) async {
+    final route = CourierDeliveryRoute.fromJson({
+      'deliveryId': 'delivery',
+      'orderId': 'order',
+      'deliveryStatus': 'ACCEPTED',
+      'orderNumber': 'CERKA-2485',
+      'merchantName': 'Sucursal Centro',
+      'merchantDisplayName': 'Restaurante El Buen Sabor',
+      'branchName': 'Sucursal Centro',
+      'merchantAddress': 'Av. España 1245, Trujillo',
+      'originLatitude': -8.1116,
+      'originLongitude': -79.0288,
+      'destinationLatitude': -8.125,
+      'destinationLongitude': -79.038,
+    });
+    final opened = <(double, double)>[];
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: CourierOrderCard(
+            route: route,
+            navigationLauncher: (latitude, longitude) async {
+              opened.add((latitude, longitude));
+              return 'Google Maps';
+            },
+          ),
+        ),
+      ),
+    ));
+
+    expect(find.text('PUNTO DE RECOJO'), findsOneWidget);
+    expect(find.text('Restaurante El Buen Sabor · Sucursal Centro'),
+        findsOneWidget);
+    expect(find.text('Av. España 1245, Trujillo'), findsOneWidget);
+
+    await tester.tap(find.text('Av. España 1245, Trujillo'));
+    await tester.pump();
+    expect(opened.single, (-8.1116, -79.0288));
+
+    await tester.tap(find.text('Ir al destino'));
+    await tester.pump();
+    expect(opened.last, (-8.125, -79.038));
+  });
+
+  testWidgets('asignado oculta comercio y dirección sin coordenadas no enlaza',
+      (tester) async {
+    Future<void> pump(String status) => tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+            body: CourierOrderCard(
+              route: CourierDeliveryRoute.fromJson({
+                'deliveryId': 'delivery',
+                'orderId': 'order',
+                'deliveryStatus': status,
+                'orderNumber': 'CERKA-2485',
+                'merchantDisplayName': 'Comercio',
+                'merchantAddress': 'Dirección conocida',
+              }),
+            ),
+          ),
+        ));
+
+    await pump('ASSIGNED');
+    expect(find.text('PUNTO DE RECOJO'), findsNothing);
+
+    await pump('ACCEPTED');
+    expect(find.text('PUNTO DE RECOJO'), findsOneWidget);
+    expect(find.byIcon(Icons.open_in_new), findsNothing);
   });
 }

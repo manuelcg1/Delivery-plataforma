@@ -7,9 +7,29 @@ import org.junit.jupiter.api.Test;
 
 class DeliveryCoverageCalculationTest {
     @Test
-    void calculatesDynamicFeeAndRoundsMoney() {
+    void calculatesDynamicFeeUsingStartedHalfKilometerBlocks() {
         assertThat(fee("4.00", "1.50", "3.003", null, null, null, "20"))
-                .isEqualByComparingTo("8.50");
+                .isEqualByComparingTo("9.25");
+    }
+
+    @Test
+    void chargesOneSolForEachStartedHalfKilometerAtStandardRate() {
+        assertThat(fee("0", "2", "0", null, null, null, "20"))
+                .isEqualByComparingTo("0.00");
+        assertThat(fee("0", "2", "0.01", null, null, null, "20"))
+                .isEqualByComparingTo("1.00");
+        assertThat(fee("0", "2", "0.50", null, null, null, "20"))
+                .isEqualByComparingTo("1.00");
+        assertThat(fee("0", "2", "0.51", null, null, null, "20"))
+                .isEqualByComparingTo("2.00");
+        assertThat(fee("0", "2", "1.00", null, null, null, "20"))
+                .isEqualByComparingTo("2.00");
+        assertThat(fee("0", "2", "1.01", null, null, null, "20"))
+                .isEqualByComparingTo("3.00");
+        assertThat(fee("0", "2", "1.50", null, null, null, "20"))
+                .isEqualByComparingTo("3.00");
+        assertThat(fee("0", "2", "1.51", null, null, null, "20"))
+                .isEqualByComparingTo("4.00");
     }
 
     @Test

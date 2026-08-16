@@ -16,6 +16,8 @@ class GooglePlacesService {
   String get sessionToken => _token;
   void newSession() => _token = const Uuid().v4();
 
+  void dispose() => _autocompleteCancel?.cancel('Formulario cerrado');
+
   Future<List<PlaceSuggestion>> autocomplete(String query,
       {double? latitude, double? longitude}) async {
     if (query.trim().length < 3) return const [];

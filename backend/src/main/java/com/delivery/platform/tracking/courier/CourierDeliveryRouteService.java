@@ -24,7 +24,8 @@ public class CourierDeliveryRouteService {
                        d.address_snapshot->>'phone' customer_phone,
                        coalesce(o.delivery_address_text,d.address_snapshot->>'addressLine') destination_address,
                        o.delivery_reference,d.delivery_notes,
-                       b.name merchant_name,coalesce(b.formatted_address,b.address_line) merchant_address,
+                       b.name merchant_name,m.name merchant_display_name,b.name branch_name,
+                       coalesce(b.formatted_address,b.address_line) merchant_address,
                        b.latitude origin_latitude,b.longitude origin_longitude,
                        o.delivery_latitude destination_latitude,o.delivery_longitude destination_longitude,
                        o.route_polyline,o.route_provider,o.route_generated_at,
@@ -33,6 +34,7 @@ public class CourierDeliveryRouteService {
                   from deliveries d
                   join orders o on o.id=d.order_id and o.tenant_id=d.tenant_id
                   join branches b on b.id=d.branch_id and b.tenant_id=d.tenant_id
+                  join merchants m on m.id=d.merchant_id and m.tenant_id=d.tenant_id
                   join courier_profiles c on c.id=d.courier_id and c.tenant_id=d.tenant_id
                  where d.id=:delivery and d.tenant_id=:tenant and c.user_id=:user
                 """).param("delivery", deliveryId).param("tenant", principal.tenantId())
@@ -41,7 +43,8 @@ public class CourierDeliveryRouteService {
                         rs.getString("status"), rs.getString("order_number"), rs.getString("customer_name"),
                         rs.getString("customer_phone"), rs.getString("destination_address"),
                         rs.getString("delivery_reference"), rs.getString("delivery_notes"),
-                        rs.getString("merchant_name"), rs.getString("merchant_address"),
+                        rs.getString("merchant_name"), rs.getString("merchant_display_name"),
+                        rs.getString("branch_name"), rs.getString("merchant_address"),
                         number(rs, "origin_latitude"), number(rs, "origin_longitude"),
                         number(rs, "destination_latitude"), number(rs, "destination_longitude"),
                         rs.getString("route_polyline"), rs.getString("route_provider"),
@@ -64,7 +67,8 @@ public class CourierDeliveryRouteService {
     public record RouteView(UUID deliveryId, UUID orderId, String deliveryStatus, String orderNumber,
                             String customerName, String customerPhone, String destinationAddress,
                             String destinationReference, String deliveryNotes, String merchantName,
-                            String merchantAddress, Double originLatitude, Double originLongitude,
+                            String merchantDisplayName, String branchName, String merchantAddress,
+                            Double originLatitude, Double originLongitude,
                             Double destinationLatitude, Double destinationLongitude, String routePolyline,
                             String routeProvider, Instant routeGeneratedAt, Double distanceKm,
                             Integer etaMinutes) {}

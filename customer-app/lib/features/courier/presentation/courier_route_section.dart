@@ -181,6 +181,11 @@ class _CourierOrderCardState extends State<CourierOrderCard> {
                     : CrossFadeState.showSecond,
                 firstChild: Column(
                   children: [
+                    if (_showsMerchantPickup(route.deliveryStatus))
+                      _MerchantPickupInfo(
+                        route: route,
+                        navigationLauncher: widget.navigationLauncher,
+                      ),
                     _SummaryContent(
                       route: route,
                       distanceKm: remainingKm,
@@ -234,6 +239,117 @@ class _CourierOrderCardState extends State<CourierOrderCard> {
     return math.max(1, (baseEta * distance / baseDistance).round());
   }
 }
+
+bool _showsMerchantPickup(String status) =>
+    status == 'ACCEPTED' || status == 'ARRIVED_AT_MERCHANT';
+
+class _MerchantPickupInfo extends StatelessWidget {
+  const _MerchantPickupInfo({
+    required this.route,
+    required this.navigationLauncher,
+  });
+
+  final CourierDeliveryRoute route;
+  final Future<String?> Function(double latitude, double longitude)
+      navigationLauncher;
+
+  @override
+  Widget build(BuildContext context) {
+    final merchantName = _textOrFallback(
+      route.merchantDisplayName,
+      _textOrFallback(route.merchantName, 'Comercio'),
+    );
+    final branchName = route.branchName?.trim();
+    final address = _textOrFallback(
+      route.merchantAddress,
+      'Dirección no disponible',
+    );
+    final canNavigate =
+        route.hasOrigin && route.merchantAddress?.trim().isNotEmpty == true;
+    final addressContent = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.location_on_outlined, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            address,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: canNavigate ? const Color(0xFF175CD3) : null,
+              decoration: canNavigate ? TextDecoration.underline : null,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (canNavigate) const Icon(Icons.open_in_new, size: 18),
+      ],
+    );
+
+    return ColoredBox(
+      color: const Color(0xFFF8FAFC),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('PUNTO DE RECOJO',
+                style: Theme.of(context).textTheme.labelSmall),
+            const SizedBox(height: 8),
+            Row(children: [
+              const Icon(Icons.storefront_outlined, size: 21),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  branchName != null &&
+                          branchName.isNotEmpty &&
+                          branchName != merchantName
+                      ? '$merchantName · $branchName'
+                      : merchantName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            if (canNavigate)
+              Semantics(
+                link: true,
+                label: 'Abrir ubicación de $merchantName',
+                child: InkWell(
+                  onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    final provider = await navigationLauncher(
+                      route.originLatitude!,
+                      route.originLongitude!,
+                    );
+                    if (provider == null && context.mounted) {
+                      messenger.showSnackBar(const SnackBar(
+                        content:
+                            Text('No se pudo abrir una aplicación de mapas.'),
+                      ));
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: addressContent,
+                  ),
+                ),
+              )
+            else
+              addressContent,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _textOrFallback(String? value, String fallback) =>
+    value?.trim().isNotEmpty == true ? value!.trim() : fallback;
 
 class _OrderHeader extends StatelessWidget {
   const _OrderHeader({

@@ -24,30 +24,6 @@ export function locationPoints(info:AssignmentInfo) {
   };
 }
 
-export function mapViewport(points:MapPoint[]) {
-  const latitudes=points.map(point=>point.latitude);
-  const longitudes=points.map(point=>point.longitude);
-  const minLat=Math.min(...latitudes),maxLat=Math.max(...latitudes);
-  const minLon=Math.min(...longitudes),maxLon=Math.max(...longitudes);
-  const latPadding=Math.max((maxLat-minLat)*.25,.005);
-  const lonPadding=Math.max((maxLon-minLon)*.25,.005);
-  return {south:minLat-latPadding,west:minLon-lonPadding,north:maxLat+latPadding,east:maxLon+lonPadding};
-}
-
-export function osmEmbedUrl(points:MapPoint[]) {
-  const bounds=mapViewport(points);
-  const bbox=[bounds.west,bounds.south,bounds.east,bounds.north].join(',');
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik`;
-}
-
-export function markerPosition(point:MapPoint,points:MapPoint[]) {
-  const bounds=mapViewport(points);
-  return {
-    left:`${((point.longitude-bounds.west)/(bounds.east-bounds.west))*100}%`,
-    top:`${((bounds.north-point.latitude)/(bounds.north-bounds.south))*100}%`,
-  };
-}
-
 export function relativeLocationTime(value:string|null,now=Date.now()) {
   if(!value)return 'Sin actualización registrada';
   const elapsed=Math.max(0,now-new Date(value).getTime());

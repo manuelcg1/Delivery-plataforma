@@ -31,20 +31,24 @@ class _CustomerOrderTrackingPageState
     extends ConsumerState<CustomerOrderTrackingPage>
     with WidgetsBindingObserver {
   final MapController _mapController = MapController();
+  final Set<String> _arrivalNoticesInProgress = <String>{};
   TrackingLocation? _displayed;
   TrackingLocation? _previous;
 
   Future<void> _showArrivalOnce(String deliveryId) async {
+    if (!_arrivalNoticesInProgress.add(deliveryId)) return;
     final key = 'arrivalShown:$deliveryId';
-    if (await OfflineCache.read(key) == true || !mounted) return;
-    await OfflineCache.write(key, true);
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showMaterialBanner(MaterialBanner(
-      leading: const Icon(Icons.delivery_dining),
-      content: const Text('¡Llegó tu pedido!\nTu repartidor ya se encuentra en el punto de entrega.'),
-      actions: [TextButton(onPressed: messenger.hideCurrentMaterialBanner, child: const Text('ENTENDIDO'))],
-    ));
+    try {
+      if (await OfflineCache.read(key) == true || !mounted) return;
+      await OfflineCache.write(key, true);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(arrivalSnackBar());
+    } finally {
+      _arrivalNoticesInProgress.remove(deliveryId);
+    }
   }
 
   @override
@@ -130,6 +134,33 @@ class _CustomerOrderTrackingPageState
     );
   }
 }
+
+SnackBar arrivalSnackBar() => const SnackBar(
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(seconds: 5),
+      showCloseIcon: true,
+      content: Row(
+        children: [
+          Icon(Icons.delivery_dining, color: Colors.white),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '¡Llegó tu pedido!',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Tu repartidor ya se encuentra en el punto de entrega.',
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
 
 class _TrackingMap extends StatelessWidget {
   const _TrackingMap({

@@ -62,6 +62,8 @@ class CourierDeliveryRoute {
     required this.destinationReference,
     required this.deliveryNotes,
     required this.merchantName,
+    required this.merchantDisplayName,
+    required this.branchName,
     required this.merchantAddress,
     required this.originLatitude,
     required this.originLongitude,
@@ -75,7 +77,8 @@ class CourierDeliveryRoute {
 
   final String deliveryId, orderId, deliveryStatus, orderNumber;
   final String? customerName, customerPhone, destinationAddress;
-  final String? destinationReference, deliveryNotes, merchantName, merchantAddress;
+  final String? destinationReference, deliveryNotes, merchantName;
+  final String? merchantDisplayName, branchName, merchantAddress;
   final double? originLatitude, originLongitude;
   final double? destinationLatitude, destinationLongitude;
   final String? routePolyline, routeProvider;
@@ -98,11 +101,14 @@ class CourierDeliveryRoute {
         destinationReference: json['destinationReference']?.toString(),
         deliveryNotes: json['deliveryNotes']?.toString(),
         merchantName: json['merchantName']?.toString(),
+        merchantDisplayName: json['merchantDisplayName']?.toString(),
+        branchName: json['branchName']?.toString(),
         merchantAddress: json['merchantAddress']?.toString(),
         originLatitude: (json['originLatitude'] as num?)?.toDouble(),
         originLongitude: (json['originLongitude'] as num?)?.toDouble(),
         destinationLatitude: (json['destinationLatitude'] as num?)?.toDouble(),
-        destinationLongitude: (json['destinationLongitude'] as num?)?.toDouble(),
+        destinationLongitude:
+            (json['destinationLongitude'] as num?)?.toDouble(),
         routePolyline: json['routePolyline']?.toString(),
         routeProvider: json['routeProvider']?.toString(),
         distanceKm: (json['distanceKm'] as num?)?.toDouble(),
@@ -217,8 +223,9 @@ class CourierRepository {
   }
 
   Future<bool> markArrived(String orderId) async {
-    final response=await api.dio.post<Map<String,dynamic>>('/api/v1/orders/$orderId/arrival');
-    return response.data?['notified']==true;
+    final response = await api.dio
+        .post<Map<String, dynamic>>('/api/v1/orders/$orderId/arrival');
+    return response.data?['notified'] == true;
   }
 
   Future<List<CourierDeliveryHistory>> history(String id) async {

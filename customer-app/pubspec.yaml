@@ -1,7 +1,7 @@
 name: delivery_customer
 description: Aplicación móvil para clientes de Delivery Platform.
 publish_to: none
-version: 0.7.0+7
+version: 0.7.1+8
 environment:
   sdk: '>=3.4.0 <4.0.0'
 dependencies:

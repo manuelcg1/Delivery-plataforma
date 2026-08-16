@@ -614,7 +614,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(notified
-                ? 'Llegada registrada. El cliente fue notificado.'
+                ? 'Llegada registrada. Intentaremos avisar al cliente.'
                 : 'La llegada ya había sido registrada.')));
     } catch (error) {
       if (mounted)
@@ -740,7 +740,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
               OutlinedButton.icon(
                 onPressed: busy ? null : markArrived,
                 icon: const Icon(Icons.location_on),
-                label: const Text('No se detectó mi llegada'),
+                label: const Text('Confirmar llegada manualmente'),
               ),
               const SizedBox(height: 12),
             ],

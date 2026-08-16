@@ -182,10 +182,10 @@ public class MerchantCourierAssignmentService {
 
     private void restore(UUID assignmentId,String result) {
         Object[] a=db.sql("""
-            select a.tenant_id,a.delivery_id,a.courier_id,a.previous_order_status,d.order_id,a.assigned_by
+            select a.tenant_id,a.delivery_id,a.courier_id,a.previous_order_status,d.order_id,a.assigned_by,d.merchant_id
             from delivery_assignments a join deliveries d on d.id=a.delivery_id where a.id=:id
-            """).param("id",assignmentId).query((r,n)->new Object[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getObject(3,UUID.class),r.getString(4),r.getObject(5,UUID.class),r.getObject(6,UUID.class)}).single();
-        UUID tenant=(UUID)a[0],delivery=(UUID)a[1],courier=(UUID)a[2],order=(UUID)a[4],actor=(UUID)a[5];String previous=(String)a[3];
+            """).param("id",assignmentId).query((r,n)->new Object[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getObject(3,UUID.class),r.getString(4),r.getObject(5,UUID.class),r.getObject(6,UUID.class),r.getObject(7,UUID.class)}).single();
+        UUID tenant=(UUID)a[0],delivery=(UUID)a[1],courier=(UUID)a[2],order=(UUID)a[4],actor=(UUID)a[5],merchant=(UUID)a[6];String previous=(String)a[3];
         db.sql("update delivery_assignments set status=:status,responded_at=coalesce(responded_at,now()),result_message=:message where id=:id")
             .param("status",result).param("message",NOT_ACCEPTED).param("id",assignmentId).update();
         db.sql("update deliveries set courier_id=null,status='PENDING',version=version+1,updated_at=now() where id=:id and tenant_id=:tenant")
@@ -199,7 +199,7 @@ public class MerchantCourierAssignmentService {
             .param("id",courier).param("tenant",tenant).update();
         db.sql("insert into audit_logs(tenant_id,user_id,action,entity_type,entity_id,metadata) values(:tenant,:user,:action,'DELIVERY_ASSIGNMENT',:id,jsonb_build_object('result',:result,'previousOrderStatus',:previous))")
             .param("tenant",tenant).param("user",actor).param("action","COURIER_ASSIGNMENT_"+result).param("id",assignmentId).param("result",result).param("previous",previous).update();
-        realtime.tenant(tenant,"merchant","COURIER_ASSIGNMENT_"+result,Map.of("orderId",order,"message",NOT_ACCEPTED));
+        realtime.tenant(tenant,merchantTopic(merchant),"COURIER_ASSIGNMENT_"+result,Map.of("orderId",order,"message",NOT_ACCEPTED));
     }
 
     private Scope scope(IdentityPrincipal p,UUID orderId) {
@@ -258,6 +258,7 @@ public class MerchantCourierAssignmentService {
     private record Scope(UUID orderId,UUID merchantId,UUID branchId,String orderStatus,UUID deliveryId,UUID courierId) {}
     private void audit(IdentityPrincipal p,Scope s,String action,String type,UUID courier,String oldStatus,String newStatus,String result){db.sql("insert into audit_logs(tenant_id,user_id,action,entity_type,entity_id,metadata) values(:tenant,:user,:action,'ORDER',:order,jsonb_build_object('merchantId',:merchant,'assignmentType',:type,'courierId',:courier,'oldStatus',:old,'newStatus',:new,'result',:result))").param("tenant",p.tenantId()).param("user",p.userId()).param("action",action).param("order",s.orderId()).param("merchant",s.merchantId()).param("type",type).param("courier",courier).param("old",oldStatus).param("new",newStatus).param("result",result).update();}
     private void event(UUID tenant,Scope s,String name){realtime.tenant(tenant,"merchant/"+s.merchantId(),name,Map.of("orderId",s.orderId(),"deliveryId",s.deliveryId()));}
+    static String merchantTopic(UUID merchantId){return "merchant/"+merchantId;}
     private ApiException conflict(String code,String message){return new ApiException(HttpStatus.CONFLICT,code,message);}
     private static String plate(String value){return value==null||value.length()<3?value:"***"+value.substring(value.length()-3);}
     static boolean isAssignableOrderStatus(String status){return "READY".equals(status);}
