@@ -73,6 +73,16 @@ class Product {
   final double price;
   final List<ProductImage> images;
   final List<ProductOptionGroup> optionGroups;
+
+  Product copyWithCatalogDetails(Product details) => Product(
+        id: id,
+        name: details.name,
+        description: details.description,
+        price: price,
+        currency: currency,
+        images: details.images,
+        optionGroups: details.optionGroups,
+      );
   ProductImage? get primaryImage {
     for (final image in images) {
       if (image.primaryImage) return image;
@@ -91,30 +101,50 @@ class Product {
                 (image) => ProductImage.fromJson(image as Map<String, dynamic>))
             .toList(growable: false),
         optionGroups: (j['optionGroups'] as List<dynamic>? ?? const <dynamic>[])
-            .map((group) => ProductOptionGroup.fromJson(group as Map<String, dynamic>))
+            .map((group) =>
+                ProductOptionGroup.fromJson(group as Map<String, dynamic>))
             .toList(growable: false),
       );
 }
 
 class ProductOptionGroup {
-  const ProductOptionGroup({required this.id,required this.name,required this.selectionType,required this.required,required this.minimumSelections,this.maximumSelections,required this.items});
-  final String id,name,selectionType;
+  const ProductOptionGroup(
+      {required this.id,
+      required this.name,
+      required this.selectionType,
+      required this.required,
+      required this.minimumSelections,
+      this.maximumSelections,
+      required this.items});
+  final String id, name, selectionType;
   final bool required;
   final int minimumSelections;
   final int? maximumSelections;
   final List<ProductOptionItem> items;
-  factory ProductOptionGroup.fromJson(Map<String,dynamic> json)=>ProductOptionGroup(
-    id:json['id'] as String,name:json['name'] as String,selectionType:json['selectionType'] as String,
-    required:json['required'] as bool? ?? false,minimumSelections:(json['minimumSelections'] as num?)?.toInt() ?? 0,
-    maximumSelections:(json['maximumSelections'] as num?)?.toInt(),
-    items:(json['items'] as List<dynamic>? ?? const []).map((item)=>ProductOptionItem.fromJson(item as Map<String,dynamic>)).toList(growable:false));
+  factory ProductOptionGroup.fromJson(Map<String, dynamic> json) =>
+      ProductOptionGroup(
+          id: json['id'] as String,
+          name: json['name'] as String,
+          selectionType: json['selectionType'] as String,
+          required: json['required'] as bool? ?? false,
+          minimumSelections: (json['minimumSelections'] as num?)?.toInt() ?? 0,
+          maximumSelections: (json['maximumSelections'] as num?)?.toInt(),
+          items: (json['items'] as List<dynamic>? ?? const [])
+              .map((item) =>
+                  ProductOptionItem.fromJson(item as Map<String, dynamic>))
+              .toList(growable: false));
 }
 
 class ProductOptionItem {
-  const ProductOptionItem({required this.id,required this.name,required this.priceAdjustment});
-  final String id,name;
+  const ProductOptionItem(
+      {required this.id, required this.name, required this.priceAdjustment});
+  final String id, name;
   final double priceAdjustment;
-  factory ProductOptionItem.fromJson(Map<String,dynamic> json)=>ProductOptionItem(id:json['id'] as String,name:json['name'] as String,priceAdjustment:(json['priceAdjustment'] as num).toDouble());
+  factory ProductOptionItem.fromJson(Map<String, dynamic> json) =>
+      ProductOptionItem(
+          id: json['id'] as String,
+          name: json['name'] as String,
+          priceAdjustment: (json['priceAdjustment'] as num).toDouble());
 }
 
 class ProductImage {
@@ -214,6 +244,13 @@ class CustomerRepository {
     return r.data!
         .map((e) => Product.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<Product> product(String productId) async {
+    final response = await api.dio.get<Map<String, dynamic>>(
+      '/api/v1/public/catalog/products/$productId',
+    );
+    return Product.fromJson(response.data!);
   }
 
   Future<List<Favorite>> favorites() async {

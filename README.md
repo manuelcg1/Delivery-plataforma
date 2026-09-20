@@ -13,6 +13,30 @@ docker compose ps
 
 Servicios: panel `http://localhost:3000`, API/health `http://localhost:8080/api/v1/public/health`, Actuator `http://localhost:8080/actuator/health`, Swagger `http://localhost:8080/swagger-ui/index.html`, Mailpit `http://localhost:8025`, MinIO `http://localhost:9001`.
 
+### Búsqueda de direcciones en local
+
+El autocompletado de direcciones de clientes y sucursales utiliza Google Places desde el backend.
+Configure en `.env` (archivo excluido de Git):
+
+```dotenv
+GOOGLE_PLACES_ENABLED=true
+GOOGLE_MAPS_API_KEY=su_clave_de_desarrollo
+GOOGLE_PLACES_COUNTRY=PE
+GOOGLE_PLACES_LANGUAGE=es
+```
+
+La clave debe tener acceso a las APIs de Places y Geocoding usadas por el backend.
+No la coloque en variables `NEXT_PUBLIC_*` ni en el código del frontend.
+Después de cambiar `.env`, recree el backend para aplicar las variables:
+
+```powershell
+docker compose up -d --no-deps backend
+```
+
+Un simple `docker compose restart` no actualiza las variables del contenedor.
+Si `GOOGLE_PLACES_ENABLED=false`, la búsqueda devuelve “El servicio de direcciones está deshabilitado”.
+Si está habilitado pero falta la clave, devuelve “El servicio de direcciones no está configurado”.
+
 ## Desarrollo
 
 ```powershell

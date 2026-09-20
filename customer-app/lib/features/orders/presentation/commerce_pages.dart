@@ -439,116 +439,271 @@ class _ProductPageState extends ConsumerState<ProductPage> {
   final Set<String> selectedOptions = <String>{};
 
   bool get validOptions => widget.product.optionGroups.every((group) {
-    final count=group.items.where((item)=>selectedOptions.contains(item.id)).length;
-    final minimum=group.required ? (group.minimumSelections < 1 ? 1 : group.minimumSelections) : group.minimumSelections;
-    return count>=minimum && (group.maximumSelections==null || count<=group.maximumSelections!) && (group.selectionType!='SINGLE' || count<=1);
-  });
-  double get optionsTotal => widget.product.optionGroups.expand((group)=>group.items).where((item)=>selectedOptions.contains(item.id)).fold(0,(total,item)=>total+item.priceAdjustment);
+        final count = group.items
+            .where((item) => selectedOptions.contains(item.id))
+            .length;
+        final minimum = group.required
+            ? (group.minimumSelections < 1 ? 1 : group.minimumSelections)
+            : group.minimumSelections;
+        return count >= minimum &&
+            (group.maximumSelections == null ||
+                count <= group.maximumSelections!) &&
+            (group.selectionType != 'SINGLE' || count <= 1);
+      });
+  double get optionsTotal => widget.product.optionGroups
+      .expand((group) => group.items)
+      .where((item) => selectedOptions.contains(item.id))
+      .fold(0, (total, item) => total + item.priceAdjustment);
+
+  String get formattedTotal =>
+      '${widget.product.currency} ${(widget.product.price * quantity + optionsTotal).toStringAsFixed(2)}';
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(widget.product.name)),
+        appBar: AppBar(
+          titleSpacing: 0,
+          title:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Detalle del producto'),
+            Text(widget.merchant.name,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    )),
+          ]),
+        ),
         body: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
           children: [
             _ProductGallery(
               product: widget.product,
               currentIndex: imageIndex,
               onPageChanged: (value) => setState(() => imageIndex = value),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Text(
               widget.product.name,
-              style: Theme.of(context).textTheme.headlineSmall,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                  ),
             ),
-            Text(widget.product.description),
-            const SizedBox(height: 12),
-            Text(
-              '${widget.product.currency} ${((widget.product.price + optionsTotal) * quantity).toStringAsFixed(2)}',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            if(widget.product.optionGroups.isNotEmpty)...[
-              const SizedBox(height:16),
-              ...widget.product.optionGroups.map((group)=>Card(
-                child:Padding(
-                  padding:const EdgeInsets.all(8),
-                  child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-                    Padding(padding:const EdgeInsets.fromLTRB(8,6,8,2),child:Text('${group.name}${group.required ? ' *' : ''}',style:Theme.of(context).textTheme.titleMedium)),
-                    Padding(padding:const EdgeInsets.symmetric(horizontal:8),child:Text(group.required?'Selección obligatoria':'Opcional',style:Theme.of(context).textTheme.bodySmall)),
-                    ...group.items.map((item){
-                      final checked=selectedOptions.contains(item.id);
-                      final price=item.priceAdjustment==0?'Gratis':'+ ${widget.product.currency} ${item.priceAdjustment.toStringAsFixed(2)}';
-                      void change(bool value){setState((){
-                        if(group.selectionType=='SINGLE'){
-                          selectedOptions.removeAll(group.items.map((candidate)=>candidate.id));
-                        }
-                        if(value) selectedOptions.add(item.id); else selectedOptions.remove(item.id);
-                      });}
-                      return CheckboxListTile(value:checked,onChanged:(value)=>change(value??false),title:Text(item.name),subtitle:Text(price),controlAffinity:ListTileControlAffinity.leading,dense:true);
-                    }),
-                  ]),
-                ),
-              )),
-              if(!validOptions) const Padding(padding:EdgeInsets.only(bottom:8),child:Text('Completa las opciones obligatorias.',style:TextStyle(color:Colors.red))),
+            if (widget.product.description.trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(widget.product.description,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        height: 1.45,
+                      )),
             ],
-            Row(
-              children: [
-                IconButton(
-                  onPressed:
-                      quantity > 1 ? () => setState(() => quantity--) : null,
-                  icon: const Icon(Icons.remove),
-                ),
-                Text('$quantity'),
-                IconButton(
-                  onPressed: () => setState(() => quantity++),
-                  icon: const Icon(Icons.add),
-                ),
-              ],
+            const SizedBox(height: 16),
+            Text(
+              '${widget.product.currency} ${widget.product.price.toStringAsFixed(2)}',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
             ),
-            FilledButton.icon(
-              onPressed: busy || !validOptions
-                  ? null
-                  : () async {
-                      setState(() => busy = true);
-                      final navigator = Navigator.of(context);
-                      final repository = ref.read(commerceRepositoryProvider);
-                      try {
-                        await repository.add(
-                          merchantId: widget.merchant.id,
-                          branchId: widget.merchant.branchId,
-                          productId: widget.product.id,
-                          quantity: quantity,
-                          optionItemIds: selectedOptions.toList(growable:false),
-                        );
-                        if (!context.mounted) return;
-                        ref.invalidate(cartProvider);
-                        showProductAddedSnackBar(
-                          cartFeedbackMessengerKey.currentState ??
-                              ScaffoldMessenger.of(context),
-                          productName: widget.product.name,
-                          quantity: quantity,
-                        );
-                        navigator.pop(ProductAddedResult(
-                          productName: widget.product.name,
-                          quantity: quantity,
-                        ));
-                      } catch (error) {
-                        if (context.mounted) {
-                          showCartErrorSnackBar(
+            if (widget.product.optionGroups.isNotEmpty) ...[
+              const SizedBox(height: 28),
+              Text('Personaliza tu pedido',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 12),
+              ...widget.product.optionGroups.map((group) => Card(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Expanded(
+                                  child: Text(group.name,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w700))),
+                              _RequirementBadge(required: group.required),
+                            ]),
+                            const SizedBox(height: 3),
+                            Text(
+                                group.selectionType == 'SINGLE'
+                                    ? 'Elige una opción'
+                                    : group.maximumSelections == null
+                                        ? 'Puedes elegir varias opciones'
+                                        : 'Elige hasta ${group.maximumSelections} opciones',
+                                style: Theme.of(context).textTheme.bodySmall),
+                            ...group.items.map((item) {
+                              final checked = selectedOptions.contains(item.id);
+                              final price = item.priceAdjustment == 0
+                                  ? 'Gratis'
+                                  : '+ ${widget.product.currency} ${item.priceAdjustment.toStringAsFixed(2)}';
+                              void change(bool value) {
+                                setState(() {
+                                  if (group.selectionType == 'SINGLE') {
+                                    selectedOptions.removeAll(group.items
+                                        .map((candidate) => candidate.id));
+                                  }
+                                  if (value)
+                                    selectedOptions.add(item.id);
+                                  else
+                                    selectedOptions.remove(item.id);
+                                });
+                              }
+
+                              return CheckboxListTile(
+                                contentPadding: EdgeInsets.zero,
+                                value: checked,
+                                onChanged: (value) => change(value ?? false),
+                                title: Text(item.name,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600)),
+                                subtitle: Text(price),
+                                controlAffinity:
+                                    ListTileControlAffinity.trailing,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              );
+                            }),
+                          ]),
+                    ),
+                  )),
+              if (!validOptions)
+                Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(children: [
+                      Icon(Icons.info_outline,
+                          size: 18, color: Theme.of(context).colorScheme.error),
+                      const SizedBox(width: 8),
+                      Text('Completa las opciones obligatorias.',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontWeight: FontWeight.w600)),
+                    ])),
+            ],
+            const SizedBox(height: 16),
+            Row(children: [
+              _QuantitySelector(
+                  value: quantity,
+                  onRemove:
+                      quantity > 1 ? () => setState(() => quantity--) : null,
+                  onAdd: () => setState(() => quantity++)),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(56)),
+                onPressed: busy || !validOptions
+                    ? null
+                    : () async {
+                        setState(() => busy = true);
+                        final navigator = Navigator.of(context);
+                        final repository = ref.read(commerceRepositoryProvider);
+                        try {
+                          await repository.add(
+                            merchantId: widget.merchant.id,
+                            branchId: widget.merchant.branchId,
+                            productId: widget.product.id,
+                            quantity: quantity,
+                            optionItemIds:
+                                selectedOptions.toList(growable: false),
+                          );
+                          if (!context.mounted) return;
+                          ref.invalidate(cartProvider);
+                          showProductAddedSnackBar(
                             cartFeedbackMessengerKey.currentState ??
                                 ScaffoldMessenger.of(context),
-                            repository.errorMessage(error),
+                            productName: widget.product.name,
+                            quantity: quantity,
                           );
+                          navigator.pop(ProductAddedResult(
+                            productName: widget.product.name,
+                            quantity: quantity,
+                          ));
+                        } catch (error) {
+                          if (context.mounted) {
+                            showCartErrorSnackBar(
+                              cartFeedbackMessengerKey.currentState ??
+                                  ScaffoldMessenger.of(context),
+                              repository.errorMessage(error),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => busy = false);
                         }
-                      } finally {
-                        if (mounted) setState(() => busy = false);
-                      }
-                    },
-              icon: const Icon(Icons.shopping_cart_outlined),
-              label: Text(busy ? 'Agregando…' : 'Agregar al carrito'),
-            ),
+                      },
+                icon: const Icon(Icons.shopping_cart_outlined),
+                label: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(busy ? 'Agregando…' : 'Agregar al carrito',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  if (!busy)
+                    Text(formattedTotal,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onPrimary
+                                .withValues(alpha: .85))),
+                ]),
+              )),
+            ]),
           ],
         ),
+      );
+}
+
+class _RequirementBadge extends StatelessWidget {
+  const _RequirementBadge({required this.required});
+  final bool required;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: required
+              ? Theme.of(context).colorScheme.primaryContainer
+              : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Text(required ? 'Obligatorio' : 'Opcional',
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(fontWeight: FontWeight.w700)),
+      );
+}
+
+class _QuantitySelector extends StatelessWidget {
+  const _QuantitySelector(
+      {required this.value, required this.onRemove, required this.onAdd});
+  final int value;
+  final VoidCallback? onRemove;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 56,
+        decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFCBD5E1)),
+            borderRadius: BorderRadius.circular(12)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(
+              tooltip: 'Quitar uno',
+              onPressed: onRemove,
+              icon: const Icon(Icons.remove, size: 20)),
+          Semantics(
+              label: 'Cantidad',
+              value: '$value',
+              child: Text('$value',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800))),
+          IconButton(
+              tooltip: 'Agregar uno',
+              onPressed: onAdd,
+              icon: const Icon(Icons.add, size: 20)),
+        ]),
       );
 }
 
@@ -621,59 +776,164 @@ class _ProductGallery extends StatelessWidget {
 
 class CartPage extends ConsumerWidget {
   const CartPage({super.key});
+
   @override
   Widget build(BuildContext context, WidgetRef ref) => Scaffold(
-        appBar: AppBar(title: const Text('Carrito')),
+        backgroundColor: const Color(0xFFF4F4F4),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFFF4F4F4),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: false,
+          titleSpacing: 20,
+          title: const Text(
+            'Carrito',
+            style: TextStyle(
+              color: Color(0xFF0F1E3A),
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
         body: ref.watch(cartProvider).when(
               data: (cart) {
-                if (cart.items.isEmpty)
+                if (cart.items.isEmpty) {
                   return const EmptyState(
                     title: 'Tu carrito está vacío',
                     message:
                         'Explora comercios y agrega tus productos favoritos.',
                   );
+                }
+
                 return ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                   children: [
-                    ...cart.items.map((item) =>
-                        CartItemTile(item: item, currency: cart.currency)),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              'Total: ${cart.currency} ${cart.total.toStringAsFixed(2)}',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 12),
-                            OutlinedButton.icon(
-                                onPressed: () async {
-                                  await ref
-                                      .read(commerceRepositoryProvider)
-                                      .clearCart();
-                                  ref.invalidate(cartProvider);
-                                },
-                                icon: const Icon(Icons.delete_sweep_outlined),
-                                label: const Text('Vaciar carrito')),
-                            FilledButton(
-                              onPressed: () => Navigator.push(
-                                context,
-                                MaterialPageRoute<void>(
-                                  builder: (_) => const CheckoutPage(),
+                    const Text(
+                      'Tu pedido',
+                      style: TextStyle(
+                        color: Color(0xFF0F1E3A),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...cart.items.map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: CartItemTile(
+                          item: item,
+                          currency: cart.currency,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: const Color(0xFFE3E8F0),
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0A0F1E3A),
+                            blurRadius: 14,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              const Text(
+                                'Total',
+                                style: TextStyle(
+                                  color: Color(0xFF0F1E3A),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              child: const Text('Continuar al checkout'),
+                              const Spacer(),
+                              Text(
+                                '${cart.currency} ${cart.total.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: Color(0xFF0F1E3A),
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              await ref
+                                  .read(commerceRepositoryProvider)
+                                  .clearCart();
+
+                              ref.invalidate(cartProvider);
+                            },
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(50),
+                              foregroundColor: const Color(0xFFFF5A5A),
+                              side: const BorderSide(
+                                color: Color(0xFFFF5A5A),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
                             ),
-                          ],
-                        ),
+                            icon: const Icon(
+                              Icons.delete_sweep_outlined,
+                              size: 20,
+                            ),
+                            label: const Text(
+                              'Vaciar carrito',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          FilledButton(
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => const CheckoutPage(),
+                              ),
+                            ),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(54),
+                              backgroundColor: const Color(0xFFFF5A5A),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text(
+                              'Continuar al checkout',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 );
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(
+                child: CircularProgressIndicator(
+                  color: Color(0xFFFF5A5A),
+                ),
+              ),
               error: (e, _) => ErrorState(
                 message: e.toString(),
                 onRetry: () => ref.invalidate(cartProvider),
@@ -683,57 +943,201 @@ class CartPage extends ConsumerWidget {
 }
 
 class CartItemTile extends ConsumerWidget {
-  const CartItemTile({super.key, required this.item, required this.currency});
+  const CartItemTile({
+    super.key,
+    required this.item,
+    required this.currency,
+  });
+
   final CartItem item;
   final String currency;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Card(
-      child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(children: [
+  Widget build(BuildContext context, WidgetRef ref) => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: const Color(0xFFE3E8F0),
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A0F1E3A),
+              blurRadius: 14,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Imagen / ícono del producto
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE5E5),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.shopping_bag_outlined,
+                color: Color(0xFFFF5A5A),
+                size: 27,
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            // Información del producto
             Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF0F1E3A),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '$currency ${item.subtotal.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Color(0xFFFF5A5A),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 8),
+
+            // Acciones
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Eliminar arriba a la derecha
+                SizedBox(
+                  width: 34,
+                  height: 30,
+                  child: IconButton(
+                    tooltip: 'Eliminar',
+                    padding: EdgeInsets.zero,
+                    onPressed: () async {
+                      await ref
+                          .read(commerceRepositoryProvider)
+                          .removeItem(item.id);
+
+                      ref.invalidate(cartProvider);
+                    },
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: Color(0xFFFF5A5A),
+                      size: 20,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Selector de cantidad
+                Container(
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF4F4F4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFE3E8F0),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                  Text(item.name,
-                      style: Theme.of(context).textTheme.titleMedium),
-                  Text('$currency ${item.subtotal.toStringAsFixed(2)}')
-                ])),
-            IconButton(
-                tooltip: 'Reducir',
-                onPressed: () async {
-                  if (item.quantity <= 1) {
-                    await ref
-                        .read(commerceRepositoryProvider)
-                        .removeItem(item.id);
-                  } else {
-                    await ref
-                        .read(commerceRepositoryProvider)
-                        .updateItem(item.id, item.quantity - 1);
-                  }
-                  ref.invalidate(cartProvider);
-                },
-                icon: const Icon(Icons.remove_circle_outline)),
-            Text('${item.quantity}'),
-            IconButton(
-                tooltip: 'Aumentar',
-                onPressed: () async {
-                  await ref
-                      .read(commerceRepositoryProvider)
-                      .updateItem(item.id, item.quantity + 1);
-                  ref.invalidate(cartProvider);
-                },
-                icon: const Icon(Icons.add_circle_outline)),
-            IconButton(
-                tooltip: 'Eliminar',
-                onPressed: () async {
-                  await ref
-                      .read(commerceRepositoryProvider)
-                      .removeItem(item.id);
-                  ref.invalidate(cartProvider);
-                },
-                icon: const Icon(Icons.delete_outline))
-          ])));
+                      // Reducir
+                      IconButton(
+                        tooltip: 'Reducir',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 34,
+                          minHeight: 36,
+                        ),
+                        onPressed: () async {
+                          if (item.quantity <= 1) {
+                            await ref
+                                .read(commerceRepositoryProvider)
+                                .removeItem(item.id);
+                          } else {
+                            await ref
+                                .read(commerceRepositoryProvider)
+                                .updateItem(
+                                  item.id,
+                                  item.quantity - 1,
+                                );
+                          }
+
+                          ref.invalidate(cartProvider);
+                        },
+                        icon: const Icon(
+                          Icons.remove,
+                          color: Color(0xFF647185),
+                          size: 17,
+                        ),
+                      ),
+
+                      // Cantidad
+                      Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${item.quantity}',
+                          style: const TextStyle(
+                            color: Color(0xFF0F1E3A),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+
+                      // Aumentar
+                      IconButton(
+                        tooltip: 'Aumentar',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 34,
+                          minHeight: 36,
+                        ),
+                        onPressed: () async {
+                          await ref.read(commerceRepositoryProvider).updateItem(
+                                item.id,
+                                item.quantity + 1,
+                              );
+
+                          ref.invalidate(cartProvider);
+                        },
+                        icon: const Icon(
+                          Icons.add,
+                          color: Color(0xFFFF5A5A),
+                          size: 18,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
 }
 
 Widget _fadeSlide(Widget child, Animation<double> animation) => FadeTransition(

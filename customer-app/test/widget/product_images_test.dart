@@ -79,4 +79,30 @@ void main() {
     expect(find.byType(PageView), findsOneWidget);
     expect(find.byType(AnimatedContainer), findsNWidgets(2));
   });
+
+  testWidgets('product detail exposes merchant, total and accessible quantity controls',
+      (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: ProductPage(
+            merchant: merchant,
+            product: Product(
+              id: 'product-1',
+              name: 'Producto',
+              description: 'Descripción',
+              price: 10,
+              currency: 'PEN',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Detalle del producto'), findsOneWidget);
+    expect(find.text('Tienda'), findsOneWidget);
+    expect(find.text('PEN 10.00'), findsNWidgets(2));
+    expect(find.byTooltip('Quitar uno'), findsOneWidget);
+    expect(find.byTooltip('Agregar uno'), findsOneWidget);
+  });
 }

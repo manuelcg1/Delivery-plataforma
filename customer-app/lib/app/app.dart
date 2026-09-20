@@ -232,128 +232,666 @@ class SearchPage extends ConsumerStatefulWidget {
 
 class _SearchPageState extends ConsumerState<SearchPage> {
   String query = '';
+
   @override
-  Widget build(BuildContext context) => ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Text('Buscar', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 16),
-          SearchBar(
-            hintText: 'Comercios y productos',
-            leading: const Icon(Icons.search),
-            onChanged: (value) => setState(() => query = value),
+  Widget build(BuildContext context) => ColoredBox(
+    color: const Color(0xFFF4F4F4),
+    child: ListView(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+      children: [
+        const Text(
+          'Buscar',
+          style: TextStyle(
+            color: Color(0xFF0F1E3A),
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
           ),
-          const SizedBox(height: 16),
-          FutureBuilder(
-            future: ref.read(customerRepositoryProvider).merchants(query),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) return const LinearProgressIndicator();
-              return Column(
-                children: snapshot.data!
-                    .map(
-                      (merchant) => Card(
-                        child: ListTile(
-                          title: Text(merchant.name),
-                          subtitle: Text(merchant.description),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => MerchantPage(merchant: merchant),
-                            ),
-                          ),
+        ),
+
+        const SizedBox(height: 18),
+
+        SearchBar(
+          hintText: 'Comercios y productos',
+          hintStyle: const WidgetStatePropertyAll(
+            TextStyle(
+              color: Color(0xFF647185),
+              fontSize: 14,
+            ),
+          ),
+          textStyle: const WidgetStatePropertyAll(
+            TextStyle(
+              color: Color(0xFF0F1E3A),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          leading: const Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Icon(
+              Icons.search_rounded,
+              color: Color(0xFFFF5A5A),
+              size: 23,
+            ),
+          ),
+          backgroundColor: const WidgetStatePropertyAll(
+            Colors.white,
+          ),
+          elevation: const WidgetStatePropertyAll(0),
+          side: const WidgetStatePropertyAll(
+            BorderSide(
+              color: Color(0xFFE3E8F0),
+            ),
+          ),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          onChanged: (value) => setState(() => query = value),
+        ),
+
+        const SizedBox(height: 22),
+
+        FutureBuilder(
+          future:
+          ref.read(customerRepositoryProvider).merchants(query),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.only(top: 20),
+                child: LinearProgressIndicator(
+                  color: Color(0xFFFF5A5A),
+                  backgroundColor: Color(0xFFFFE5E5),
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(20),
+                  ),
+                ),
+              );
+            }
+
+            return Column(
+              children: snapshot.data!
+                  .map(
+                    (merchant) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              MerchantPage(merchant: merchant),
                         ),
                       ),
-                    )
-                    .toList(),
-              );
-            },
-          ),
-        ],
-      );
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: const Color(0xFFE3E8F0),
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x080F1E3A),
+                              blurRadius: 12,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFE5E5),
+                                borderRadius:
+                                BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.storefront_outlined,
+                                color: Color(0xFFFF5A5A),
+                                size: 24,
+                              ),
+                            ),
+
+                            const SizedBox(width: 12),
+
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    merchant.name,
+                                    maxLines: 1,
+                                    overflow:
+                                    TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF0F1E3A),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 5),
+
+                                  Text(
+                                    merchant.description,
+                                    maxLines: 2,
+                                    overflow:
+                                    TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF647185),
+                                      fontSize: 13,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(width: 8),
+
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: Color(0xFF647185),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+                  .toList(),
+            );
+          },
+        ),
+      ],
+    ),
+  );
 }
 
 class FavoritesPage extends ConsumerWidget {
   const FavoritesPage({super.key});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) => ref
-      .watch(favoritesProvider)
-      .when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => ErrorState(
-          message: error.toString(),
-          onRetry: () => ref.invalidate(favoritesProvider),
+  Widget build(BuildContext context, WidgetRef ref) => ColoredBox(
+    color: const Color(0xFFF4F4F4),
+    child: ref.watch(favoritesProvider).when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFFFF5A5A),
         ),
-        data: (items) {
-          if (items.isEmpty)
-            return const Center(
-                child:
-                    Text('Guarda aquí tus comercios y productos favoritos.'));
-          return ListView(padding: const EdgeInsets.all(20), children: [
-            Text('Favoritos',
-                style: Theme.of(context).textTheme.headlineMedium),
-            ...items.map((item) => Card(
-                child: ListTile(
-                    leading: const Icon(Icons.favorite, color: Colors.red),
-                    title: Text(item.name),
-                    subtitle: Text(item.description),
-                    trailing: IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () async {
-                          await ref
-                              .read(customerRepositoryProvider)
-                              .removeFavorite(item.id);
-                          ref.invalidate(favoritesProvider);
-                        }))))
-          ]);
-        },
-      );
+      ),
+
+      error: (error, _) => ErrorState(
+        message: error.toString(),
+        onRetry: () => ref.invalidate(favoritesProvider),
+      ),
+
+      data: (items) {
+        if (items.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 32,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFE5E5),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.favorite_border_rounded,
+                      color: Color(0xFFFF5A5A),
+                      size: 36,
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  const Text(
+                    'Aún no tienes favoritos',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF0F1E3A),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  const Text(
+                    'Guarda aquí tus comercios y productos favoritos.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF647185),
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(
+            20,
+            24,
+            20,
+            32,
+          ),
+          children: [
+            const Text(
+              'Favoritos',
+              style: TextStyle(
+                color: Color(0xFF0F1E3A),
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 6),
+
+            const Text(
+              'Tus comercios y productos guardados',
+              style: TextStyle(
+                color: Color(0xFF647185),
+                fontSize: 13,
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            ...items.map(
+                  (item) => Padding(
+                padding: const EdgeInsets.only(
+                  bottom: 12,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: const Color(0xFFE3E8F0),
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x080F1E3A),
+                        blurRadius: 14,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment:
+                    CrossAxisAlignment.center,
+                    children: [
+                      // Icono favorito
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color:
+                          const Color(0xFFFFE5E5),
+                          borderRadius:
+                          BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.favorite_rounded,
+                          color: Color(0xFFFF5A5A),
+                          size: 24,
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      // Información
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.name,
+                              maxLines: 1,
+                              overflow:
+                              TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color:
+                                Color(0xFF0F1E3A),
+                                fontSize: 15,
+                                fontWeight:
+                                FontWeight.w600,
+                              ),
+                            ),
+
+                            const SizedBox(height: 5),
+
+                            Text(
+                              item.description,
+                              maxLines: 2,
+                              overflow:
+                              TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color:
+                                Color(0xFF647185),
+                                fontSize: 13,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(width: 8),
+
+                      // Eliminar
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color:
+                          const Color(0xFFFFF2F2),
+                          borderRadius:
+                          BorderRadius.circular(12),
+                        ),
+                        child: IconButton(
+                          tooltip: 'Eliminar favorito',
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            color:
+                            Color(0xFFFF5A5A),
+                            size: 20,
+                          ),
+                          onPressed: () async {
+                            await ref
+                                .read(
+                              customerRepositoryProvider,
+                            )
+                                .removeFavorite(item.id);
+
+                            ref.invalidate(
+                              favoritesProvider,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
 }
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authControllerProvider).value;
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text('Perfil', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.person)),
-            title: Text(user?.firstName ?? ''),
-            subtitle: Text('Tenant: ${user?.tenantCode ?? ''}'),
-          ),
-        ),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.location_on_outlined),
-            title: const Text('Mis direcciones'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const AddressesPage()),
+
+    final firstName = user?.firstName ?? '';
+
+    final initial = firstName.isNotEmpty
+        ? firstName.substring(0, 1).toUpperCase()
+        : 'C';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Mi perfil',
+            style: TextStyle(
+              color: Color(0xFF0F1E3A),
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
             ),
           ),
-        ),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.notifications_outlined),
-            title: const Text('Notificaciones'),
-            onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                    builder: (_) => const NotificationsPage())),
+
+          const SizedBox(height: 36),
+
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF5A5A),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 32,
+                  backgroundColor: const Color(0xFFFFE5E5),
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Color(0xFF647185),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 16),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        firstName.isNotEmpty ? firstName : 'Cliente',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'CLIENTE',
+                              style: TextStyle(
+                                color: Color(0xFFFF5A5A),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+
+                          const Spacer(),
+
+                          OutlinedButton(
+                            onPressed: () {},
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFFFF5A5A),
+                              side: const BorderSide(
+                                color: Color(0xFFFF5A5A),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              minimumSize: Size.zero,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text(
+                              'Editar perfil',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 24),
-        OutlinedButton.icon(
-          onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-          icon: const Icon(Icons.logout),
-          label: const Text('Cerrar sesión'),
-        ),
-      ],
+
+          const SizedBox(height: 24),
+
+          const Text(
+            'Mi cuenta',
+            style: TextStyle(
+              color: Color(0xFF0F1E3A),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 4,
+                  ),
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE5E5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.location_on_outlined,
+                      color: Color(0xFFFF5A5A),
+                      size: 20,
+                    ),
+                  ),
+                  title: const Text(
+                    'Mis direcciones',
+                    style: TextStyle(
+                      color: Color(0xFF0F1E3A),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: Color(0xFF647185),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AddressesPage(),
+                    ),
+                  ),
+                ),
+
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  indent: 62,
+                  color: Color(0xFFE3E8F0),
+                ),
+
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 4,
+                  ),
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE5E5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.notifications_outlined,
+                      color: Color(0xFFFF5A5A),
+                      size: 20,
+                    ),
+                  ),
+                  title: const Text(
+                    'Notificaciones',
+                    style: TextStyle(
+                      color: Color(0xFF0F1E3A),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: Color(0xFF647185),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const NotificationsPage(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(),
+
+          Center(
+            child: TextButton(
+              onPressed: () =>
+                  ref.read(authControllerProvider.notifier).logout(),
+              child: const Text(
+                'Cerrar sesión',
+                style: TextStyle(
+                  color: Color(0xFFFF5A5A),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

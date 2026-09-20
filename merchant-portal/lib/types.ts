@@ -1,8 +1,10 @@
 export type Branch={id:string;name:string;status:string;pausedUntil:string|null;pauseReason:string|null};
 export type Merchant={id:string;name:string;role:string;branches:Branch[]};
 export type MerchantContext={userId:string;tenantId:string;merchants:Merchant[]};
-export type OrderRow={id:string;orderNumber:string;merchantId:string;branchId:string;branchName:string;customerName:string;status:string;paymentStatus:string;total:number;currency:string;version:number;createdAt:string;updatedAt:string;deliveryStatus:string|null;courierName:string|null;paymentMethod:string|null};
-export type OrderDetail={order:OrderRow;phone:string;address:string;district:string;notes:string|null;items:{productName:string;quantity:number;unitPrice:number;subtotal:number;notes:string|null}[]};
+export type OrderOption={optionGroupId:string;optionItemId:string;groupName:string;itemName:string;priceAdjustment:number};
+export type OrderItem={id?:string;productName:string;quantity:number;unitPrice:number;subtotal:number;notes:string|null;options?:OrderOption[]};
+export type OrderRow={id:string;orderNumber:string;merchantId:string;branchId:string;branchName:string;customerName:string;status:string;paymentStatus:string;total:number;currency:string;version:number;createdAt:string;updatedAt:string;deliveryStatus:string|null;courierName:string|null;paymentMethod:string|null;items?:OrderItem[]};
+export type OrderDetail={order:OrderRow;phone:string;address:string;district:string;notes:string|null;items:OrderItem[]};
 export type Page<T>={content:T[];page:number;size:number;totalElements:number;totalPages:number;first:boolean;last:boolean};
 export type StatusCount={status:string;count:number};
 export type AssignmentInfo={deliveryId:string;assignmentId:string|null;assignmentStatus:string|null;message:string|null;courierId:string|null;courierName:string|null;vehicleType:string|null;courierStatus:string|null;assignedAt:string|null;expiresAt:string|null;latitude:number|null;longitude:number|null;lastLocationAt:string|null;customerLatitude:number|null;customerLongitude:number|null};

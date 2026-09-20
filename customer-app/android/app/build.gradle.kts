@@ -31,7 +31,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        resValue("string", "app_name", "Delivery")
+        resValue("string", "app_name", "CERKA")
     }
 
     signingConfigs {
@@ -47,7 +47,7 @@ android {
     buildTypes {
         debug {
             versionNameSuffix = "-debug"
-            resValue("string", "app_name", "Delivery Debug")
+            resValue("string", "app_name", "CERKA")
         }
         release {
             signingConfig = signingConfigs.getByName("release")

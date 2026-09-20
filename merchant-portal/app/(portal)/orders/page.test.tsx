@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest';
-import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import {createElement} from 'react';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import Orders from './page';
@@ -13,6 +13,7 @@ const state=vi.hoisted(()=>({
   courierLatitude:-12.1,
   customerLatitude:-12.2,
   mapProps:null as null|{courier:{latitude:number;longitude:number}|null;customer:{latitude:number;longitude:number}|null},
+  customized:false,
 }));
 
 vi.mock('next/dynamic',()=>({
@@ -49,12 +50,23 @@ vi.mock('@/lib/order-experience',()=>({
 vi.mock('@/lib/api',()=>({
   ApiError:class ApiError extends Error {status=500},
   api:vi.fn(async(path:string)=>{
+    const items=state.customized?[
+      {id:'item-1',productName:'Helado',quantity:2,unitPrice:12.5,subtotal:25,notes:'Sin cucharita',options:[
+        {optionGroupId:'flavors',optionItemId:'strawberry',groupName:'Sabores',itemName:'Fresa',priceAdjustment:0},
+        {optionGroupId:'extras',optionItemId:'chocolate',groupName:'Extras',itemName:'Chocolate',priceAdjustment:2.5},
+      ]},
+      {id:'item-2',productName:'Helado',quantity:1,unitPrice:10,subtotal:10,notes:null,options:[
+        {optionGroupId:'flavors',optionItemId:'vanilla',groupName:'Sabores',itemName:'Vainilla',priceAdjustment:0},
+      ]},
+      {id:'item-3',productName:'Agua',quantity:1,unitPrice:3,subtotal:3,notes:null,options:[]},
+    ]:[{id:'plain',productName:'Producto',quantity:1,unitPrice:20,subtotal:20,notes:null,options:[]}];
     const order={
       id:'order-1',orderNumber:'CERKA-100',merchantId:'merchant-1',
       branchId:'branch-1',branchName:'Centro',customerName:'Cliente',
       status:'READY',paymentStatus:'PAID',total:20,currency:'PEN',version:1,
       createdAt:'2026-08-15T12:00:00Z',updatedAt:'2026-08-15T12:00:00Z',
       deliveryStatus:'ASSIGNED',courierName:'Ana Repartidora',paymentMethod:'CARD',
+      items,
     };
     if(path.includes('/delivery/assignment'))return {
       deliveryId:'delivery-1',assignmentId:'assignment-1',
@@ -65,7 +77,7 @@ vi.mock('@/lib/api',()=>({
     };
     if(path==='/api/v1/merchant/orders/order-1')return {
       order,phone:'999999999',address:'Av. Principal 123',district:'Centro',
-      notes:null,items:[{productName:'Producto',quantity:1,unitPrice:20,subtotal:20,notes:null}],
+      notes:state.customized?'Tocar el timbre':null,items,
     };
     if(path.includes('/status-counts'))return [{status:'READY',count:1}];
     if(path.startsWith('/api/v1/merchant/orders?'))return {
@@ -83,6 +95,47 @@ afterEach(()=>{
   state.courierLatitude=-12.1;
   state.customerLatitude=-12.2;
   state.mapProps=null;
+  state.customized=false;
+});
+
+describe('opciones del pedido',()=>{
+  it('muestra las selecciones por producto en la tabla y todas las notas en el detalle',async()=>{
+    state.customized=true;
+    render(createElement(Orders));
+    const table=await screen.findByRole('table');
+    await within(table).findByText('2 × Helado');
+    expect(within(table).getByRole('columnheader',{name:'Productos y opciones'})).toBeInTheDocument();
+    expect(within(table).getByText('Fresa')).toBeInTheDocument();
+    expect(within(table).getByText('Chocolate')).toBeInTheDocument();
+    expect(within(table).getAllByText('Gratis')).toHaveLength(2);
+    expect(within(table).getByText(/2[.,]50.*por unidad/)).toBeInTheDocument();
+    expect(within(table).getByText('Sin cucharita')).toBeInTheDocument();
+    expect(within(table).getByText('Vainilla')).toBeInTheDocument();
+    fireEvent.click(within(table).getByRole('button',{name:'Ver 1 producto más'}));
+    expect(within(table).getByText('1 × Agua')).toBeInTheDocument();
+    fireEvent.click(within(table).getByRole('button',{name:'Mostrar menos productos'}));
+    expect(within(table).queryByText('1 × Agua')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button',{name:'Ver detalle'}));
+    const detail=await screen.findByRole('complementary');
+    expect(await within(detail).findByText('Fresa')).toBeInTheDocument();
+    expect(within(detail).getByText('Vainilla')).toBeInTheDocument();
+    expect(within(detail).getByText('1 × Agua')).toBeInTheDocument();
+    expect(within(detail).getByText('Sin cucharita')).toBeInTheDocument();
+    expect(within(detail).getByText('Tocar el timbre')).toBeInTheDocument();
+    expect(within(detail).queryByRole('button',{name:/producto más/})).not.toBeInTheDocument();
+  });
+
+  it('conserva los pedidos sin opciones y su subtotal',async()=>{
+    render(createElement(Orders));
+    const table=await screen.findByRole('table');
+    expect(await within(table).findByText('1 × Producto')).toBeInTheDocument();
+    expect(within(table).queryByText('Gratis')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Ver detalle'}));
+    const detail=await screen.findByRole('complementary');
+    expect(await within(detail).findByText('1 × Producto')).toBeInTheDocument();
+    expect(within(detail).getAllByText(/20[.,]00/)).toHaveLength(2);
+  });
 });
 
 describe('detalle de asignación del pedido',()=>{

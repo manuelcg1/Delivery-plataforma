@@ -19,6 +19,14 @@ import java.util.*;
 
 @Service
 public class MerchantPortalService {
+    private static final String ORDER_BRANCH_ACCESS = """
+        and (:admin or exists (
+            select 1 from merchant_memberships mm
+            join merchant_branch_assignments mba on mba.membership_id=mm.id
+            where mm.tenant_id=o.tenant_id and mm.merchant_id=o.merchant_id
+              and mm.user_id=:user and mm.active and mba.branch_id=o.branch_id
+        ))
+        """;
     private final JdbcClient db;
     private final RealtimeGateway realtime;
 
@@ -33,8 +41,18 @@ public class MerchantPortalService {
     public record OrderRow(UUID id, String orderNumber, UUID merchantId, UUID branchId, String branchName,
                            String customerName, String status, String paymentStatus, BigDecimal total,
                            String currency, int version, Instant createdAt, Instant updatedAt,
-                           String deliveryStatus,String courierName,String paymentMethod) {}
-    public record OrderItem(String productName, int quantity, BigDecimal unitPrice, BigDecimal subtotal, String notes) {}
+                           String deliveryStatus,String courierName,String paymentMethod,List<OrderItem> items) {
+        OrderRow withItems(List<OrderItem> selectedItems) {
+            return new OrderRow(id,orderNumber,merchantId,branchId,branchName,customerName,status,paymentStatus,
+                total,currency,version,createdAt,updatedAt,deliveryStatus,courierName,paymentMethod,selectedItems);
+        }
+    }
+    public record OrderOption(UUID optionGroupId, UUID optionItemId, String groupName, String itemName,
+                              BigDecimal priceAdjustment) {}
+    public record OrderItem(UUID id, String productName, int quantity, BigDecimal unitPrice, BigDecimal subtotal,
+                            String notes, List<OrderOption> options) {}
+    private record ItemRow(UUID orderId, OrderItem item) {}
+    private record OptionRow(UUID itemId, OrderOption option) {}
     public record OrderDetail(OrderRow order, String phone, String address, String district, String notes,
                               List<OrderItem> items) {}
     public record StatusMetric(String status, long orders, BigDecimal total) {}
@@ -78,7 +96,7 @@ public class MerchantPortalService {
                 when o.status in ('READY','ASSIGNED') and (select da.status from deliveries d join delivery_assignments da on da.delivery_id=d.id where d.order_id=o.id order by da.assigned_at desc limit 1)='ACCEPTED' then 'COURIER_ASSIGNED'
                 else o.status end)=:status)
               and (:search='' or lower(o.order_number||' '||u.first_name||' '||u.last_name||' '||coalesce((select cu.first_name||' '||cu.last_name from deliveries d join courier_profiles cp on cp.id=d.courier_id join users cu on cu.id=cp.user_id where d.order_id=o.id order by d.created_at desc limit 1),'')) like lower('%'||:search||'%'))
-            """;
+            """ + ORDER_BRANCH_ACCESS;
         long total = query(where, principal, merchantId, branchId, state, normalized,
             "select count(*) " + where).query(Long.class).single();
         List<OrderRow> rows = query(where, principal, merchantId, branchId, state, normalized,
@@ -89,7 +107,9 @@ public class MerchantPortalService {
                 "case when o.status in ('READY','ASSIGNED') and (select da.status from deliveries d join delivery_assignments da on da.delivery_id=d.id where d.order_id=o.id order by da.assigned_at desc limit 1)='PENDING' then 'SEARCHING_COURIER' when o.status in ('READY','ASSIGNED') and (select da.status from deliveries d join delivery_assignments da on da.delivery_id=d.id where d.order_id=o.id order by da.assigned_at desc limit 1)='ACCEPTED' then 'COURIER_ASSIGNED' else o.status end effective_status " + where +
                 " order by case o.status when 'PENDING' then 0 when 'CONFIRMED' then 1 when 'PREPARING' then 2 when 'READY' then 3 else 4 end,o.created_at asc limit :limit offset :offset")
             .param("limit", safeSize).param("offset", safePage * safeSize).query(this::row).list();
-        return PageResponse.of(rows, safePage, safeSize, total);
+        Map<UUID, List<OrderItem>> items = itemsByOrder(principal, rows.stream().map(OrderRow::id).toList());
+        return PageResponse.of(rows.stream().map(row -> row.withItems(items.getOrDefault(row.id(), List.of()))).toList(),
+            safePage, safeSize, total);
     }
 
     public List<StatusCount> statusCounts(IdentityPrincipal p,UUID merchantId,UUID branchId){
@@ -104,8 +124,9 @@ public class MerchantPortalService {
             )a on true
             where o.tenant_id=:tenant and o.merchant_id=:merchant
               and (cast(:branch as uuid) is null or o.branch_id=:branch)
-            group by effective_status order by effective_status
-            """).param("tenant",p.tenantId()).param("merchant",merchantId).param("branch",branchId)
+            """ + ORDER_BRANCH_ACCESS + " group by effective_status order by effective_status")
+            .param("tenant",p.tenantId()).param("merchant",merchantId).param("branch",branchId)
+            .param("admin",admin(p)).param("user",p.userId())
             .query((r,n)->new StatusCount(r.getString(1),r.getLong(2))).list();
     }
 
@@ -122,7 +143,8 @@ public class MerchantPortalService {
             join delivery_addresses da on da.id=o.delivery_address_id
             where o.id=:id and o.tenant_id=:tenant
             """).param("id", id).param("tenant", principal.tenantId()).query((rs, n) -> new OrderDetail(row,
-                rs.getString("phone"), rs.getString("address_line"), rs.getString("district"), rs.getString("notes"), items(principal, id))).single();
+                rs.getString("phone"), rs.getString("address_line"), rs.getString("district"), rs.getString("notes"),
+                itemsByOrder(principal, List.of(id)).getOrDefault(id, List.of()))).single();
     }
 
     public Report report(IdentityPrincipal principal, UUID merchantId, UUID branchId, int days) {
@@ -228,7 +250,7 @@ public class MerchantPortalService {
             select count(*) from merchant_memberships mm
             left join merchant_branch_assignments mba on mba.membership_id=mm.id
             where mm.tenant_id=:tenant and mm.user_id=:user and mm.merchant_id=:merchant and mm.active
-              and (:branch is null or mba.branch_id=:branch)
+              and (cast(:branch as uuid) is null or mba.branch_id=:branch)
             """).param("tenant", p.tenantId()).param("user", p.userId()).param("merchant", merchantId)
             .param("branch", branchId).query(Integer.class).single();
         if (count == 0) throw notFound("Comercio o sucursal no asignada");
@@ -236,13 +258,37 @@ public class MerchantPortalService {
 
     private JdbcClient.StatementSpec query(String where, IdentityPrincipal p, UUID merchant, UUID branch, String status, String search, String sql) {
         return db.sql(sql).param("tenant", p.tenantId()).param("merchant", merchant).param("branch", branch)
-            .param("status", status).param("search", search);
+            .param("status", status).param("search", search).param("admin", admin(p)).param("user", p.userId());
     }
 
-    private List<OrderItem> items(IdentityPrincipal p, UUID orderId) {
-        return db.sql("select product_name,quantity,unit_price,subtotal,notes from order_items where tenant_id=:tenant and order_id=:id order by product_name")
-            .param("tenant", p.tenantId()).param("id", orderId).query((rs, n) -> new OrderItem(rs.getString(1), rs.getInt(2),
-                rs.getBigDecimal(3), rs.getBigDecimal(4), rs.getString(5))).list();
+    // Only called with order IDs authorized by orders() or order(). Two queries per page, not per item.
+    private Map<UUID, List<OrderItem>> itemsByOrder(IdentityPrincipal p, List<UUID> orderIds) {
+        if (orderIds.isEmpty()) return Map.of();
+        List<OptionRow> selections = db.sql("""
+            select opt.order_item_id,opt.option_group_id,opt.option_item_id,opt.group_name,opt.item_name,opt.price_adjustment
+            from order_item_options opt join order_items item on item.id=opt.order_item_id and item.tenant_id=opt.tenant_id
+            where item.tenant_id=:tenant and item.order_id in (:orders)
+            order by opt.order_item_id,opt.group_name,opt.option_group_id,opt.item_name,opt.option_item_id
+            """).param("tenant", p.tenantId()).param("orders", orderIds)
+            .query((rs, n) -> new OptionRow(rs.getObject("order_item_id", UUID.class), new OrderOption(
+                rs.getObject("option_group_id", UUID.class), rs.getObject("option_item_id", UUID.class),
+                rs.getString("group_name"), rs.getString("item_name"), rs.getBigDecimal("price_adjustment")))).list();
+        Map<UUID, List<OrderOption>> options = new HashMap<>();
+        for (OptionRow selection : selections) {
+            options.computeIfAbsent(selection.itemId(), ignored -> new ArrayList<>()).add(selection.option());
+        }
+        List<ItemRow> rows = db.sql("""
+            select id,order_id,product_name,quantity,unit_price,subtotal,notes from order_items
+            where tenant_id=:tenant and order_id in (:orders) order by order_id,product_name,id
+            """).param("tenant", p.tenantId()).param("orders", orderIds)
+            .query((rs, n) -> new ItemRow(rs.getObject("order_id", UUID.class), new OrderItem(
+                rs.getObject("id", UUID.class), rs.getString("product_name"), rs.getInt("quantity"),
+                rs.getBigDecimal("unit_price"), rs.getBigDecimal("subtotal"), rs.getString("notes"),
+                List.copyOf(options.getOrDefault(rs.getObject("id", UUID.class), List.of()))))).list();
+        Map<UUID, List<OrderItem>> result = new HashMap<>();
+        for (ItemRow row : rows) result.computeIfAbsent(row.orderId(), ignored -> new ArrayList<>()).add(row.item());
+        result.replaceAll((id, items) -> List.copyOf(items));
+        return result;
     }
 
     private OrderRow row(ResultSet rs, int n) throws SQLException {
@@ -250,7 +296,7 @@ public class MerchantPortalService {
             rs.getObject("branch_id", UUID.class), rs.getString("branch_name"), rs.getString("customer_name"), effectiveStatus(rs),
             rs.getString("payment_status"), rs.getBigDecimal("total"), rs.getString("currency"), rs.getInt("version"),
             instant(rs, "created_at"), instant(rs, "updated_at"),
-            column(rs,"delivery_status"),column(rs,"courier_name"),column(rs,"payment_method"));
+            column(rs,"delivery_status"),column(rs,"courier_name"),column(rs,"payment_method"),List.of());
     }
 
     private Instant instant(ResultSet rs, String column) throws SQLException {

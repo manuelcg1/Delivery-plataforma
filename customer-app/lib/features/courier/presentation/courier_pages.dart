@@ -123,29 +123,44 @@ class CourierDeliveriesPage extends ConsumerStatefulWidget {
       _CourierDeliveriesPageState();
 }
 
-class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
+class _CourierDeliveriesPageState
+    extends ConsumerState<CourierDeliveriesPage> {
   late Future<(CourierProfile, List<CourierDelivery>)> future;
   StreamSubscription<RealtimeEvent>? assignmentSubscription;
   Timer? fallbackRefresh;
+
+  static const Color _cerkaCoral = Color(0xFFFF5A5A);
+  static const Color _cerkaNavy = Color(0xFF0F1E3A);
+  static const Color _cerkaBackground = Color(0xFFF4F4F4);
+  static const Color _cerkaSoftCoral = Color(0xFFFFE5E5);
+  static const Color _cerkaGray = Color(0xFF647185);
+  static const Color _cerkaDivider = Color(0xFFE3E8F0);
+  static const Color _cerkaGreen = Color(0xFF16A34A);
 
   @override
   void initState() {
     super.initState();
     future = load();
+
     Future.microtask(() {
-      assignmentSubscription = ref.read(realtimeClientProvider).events.listen(
-        (event) {
-          if (mounted &&
-              const {'COURIER_ASSIGNMENT_PENDING', 'CourierAssigned'}
-                  .contains(event.type)) {
-            refresh();
-          }
-        },
-      );
+      assignmentSubscription =
+          ref.read(realtimeClientProvider).events.listen(
+                (event) {
+              if (mounted &&
+                  const {
+                    'COURIER_ASSIGNMENT_PENDING',
+                    'CourierAssigned',
+                  }.contains(event.type)) {
+                refresh();
+              }
+            },
+          );
     });
-    fallbackRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) refresh();
-    });
+
+    fallbackRefresh =
+        Timer.periodic(const Duration(seconds: 10), (_) {
+          if (mounted) refresh();
+        });
   }
 
   @override
@@ -157,29 +172,51 @@ class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
 
   Future<(CourierProfile, List<CourierDelivery>)> load() async {
     final repository = ref.read(courierRepositoryProvider);
+
     final profile = await repository.profile();
     final deliveries = await repository.deliveries();
-    Future.microtask(() => ref
-        .read(courierTrackingControllerProvider.notifier)
-        .restoreFromBackend(deliveries));
+
+    Future.microtask(
+          () => ref
+          .read(courierTrackingControllerProvider.notifier)
+          .restoreFromBackend(deliveries),
+    );
+
     return (profile, deliveries);
   }
 
   void refresh() {
     if (!mounted) return;
+
     final nextLoad = load();
+
     setState(() {
       future = nextLoad;
     });
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder(
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: _cerkaBackground,
+      child: FutureBuilder(
         future: future,
         builder: (context, snapshot) {
+          // =========================
+          // CARGANDO
+          // =========================
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(
+                color: _cerkaCoral,
+                strokeWidth: 3,
+              ),
+            );
           }
+
+          // =========================
+          // ERROR
+          // =========================
           if (snapshot.hasError) {
             return _CourierError(
               message: ref
@@ -189,154 +226,436 @@ class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
               onRetry: refresh,
             );
           }
+
           final (profile, deliveries) = snapshot.data!;
+
           final active = deliveries
-              .where((item) => !const {
-                    'DELIVERED',
-                    'FAILED',
-                    'CANCELLED',
-                    'REJECTED',
-                    'EXPIRED',
-                  }.contains(item.status))
+              .where(
+                (item) => !const {
+              'DELIVERED',
+              'FAILED',
+              'CANCELLED',
+              'REJECTED',
+              'EXPIRED',
+            }.contains(item.status),
+          )
               .toList();
+
           final delivered = sortedDeliveredOrders(deliveries);
           final recentDelivered = recentDeliveredOrders(delivered);
+
           return RefreshIndicator(
+            color: _cerkaCoral,
+            backgroundColor: Colors.white,
             onRefresh: () async => refresh(),
             child: ListView(
-              padding: const EdgeInsets.all(20),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                32,
+              ),
               children: [
-                Text('Hola, ${profile.name}',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF0F172A))),
-                const SizedBox(height: 4),
+                // =========================
+                // SALUDO
+                // =========================
+
                 Text(
-                    '${profile.activeDeliveries}/${profile.maxActiveDeliveries} entregas activas'),
-                const SizedBox(height: 16),
-                Card(
-                  margin: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.circle,
-                            size: 18, color: Color(0xFF16A34A)),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Disponibilidad',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.w700)),
-                              Text('Recibiendo pedidos',
-                                  style: TextStyle(
-                                      color: Color(0xFF64748B), fontSize: 13)),
-                            ],
+                  'Hola, ${profile.name}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: _cerkaNavy,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.local_shipping_outlined,
+                      size: 17,
+                      color: _cerkaGray,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${profile.activeDeliveries}/${profile.maxActiveDeliveries} entregas activas',
+                      style: const TextStyle(
+                        color: _cerkaGray,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 22),
+
+                // =========================
+                // DISPONIBILIDAD
+                // =========================
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: _cerkaDivider,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.035),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: _cerkaGreen.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.wifi_tethering_rounded,
+                            color: _cerkaGreen,
+                            size: 23,
                           ),
                         ),
-                        DropdownButton<String>(
-                          value: profile.status,
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'ONLINE', child: Text('En línea')),
-                            DropdownMenuItem(
-                                value: 'PAUSED', child: Text('En pausa')),
-                            DropdownMenuItem(
-                                value: 'OFFLINE', child: Text('Desconectado')),
+                      ),
+
+                      const SizedBox(width: 13),
+
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Disponibilidad',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: _cerkaNavy,
+                              ),
+                            ),
+                            SizedBox(height: 3),
+                            Text(
+                              'Recibiendo pedidos',
+                              style: TextStyle(
+                                color: _cerkaGray,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ],
-                          onChanged: (value) async {
-                            if (value == null) return;
-                            await ref
-                                .read(courierRepositoryProvider)
-                                .updateAvailability(value);
-                            refresh();
-                          },
+                        ),
+                      ),
+
+                      Container(
+                        padding:
+                        const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: _cerkaBackground,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _cerkaDivider,
+                          ),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: profile.status,
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: _cerkaNavy,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                            style: const TextStyle(
+                              color: _cerkaNavy,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'ONLINE',
+                                child: Text('En línea'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'PAUSED',
+                                child: Text('En pausa'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'OFFLINE',
+                                child: Text('Desconectado'),
+                              ),
+                            ],
+                            onChanged: (value) async {
+                              if (value == null) return;
+
+                              await ref
+                                  .read(courierRepositoryProvider)
+                                  .updateAvailability(value);
+
+                              refresh();
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 28),
+
+                // =========================
+                // ENTREGAS ACTIVAS
+                // =========================
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Entrega activa',
+                        style:
+                        Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: _cerkaNavy,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
+                    if (active.isNotEmpty)
+                      _CountBadge(
+                        count: active.length,
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                if (active.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 34,
+                      horizontal: 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: _cerkaDivider,
+                      ),
+                    ),
+                    child: const Column(
+                      children: [
+                        _CourierEmptyIcon(
+                          icon: Icons.delivery_dining_outlined,
+                        ),
+                        SizedBox(height: 14),
+                        Text(
+                          'Sin entregas activas',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _cerkaNavy,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: 5),
+                        Text(
+                          'Cuando recibas un nuevo pedido aparecerá aquí.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _cerkaGray,
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Row(children: [
-                  Text('Entrega activa',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w700)),
-                  if (active.isNotEmpty) ...[
-                    const SizedBox(width: 10),
-                    _CountBadge(count: active.length),
-                  ],
-                ]),
-                const SizedBox(height: 8),
-                if (active.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Center(child: Text('No tienes entregas asignadas.')),
-                  ),
-                ...active.map((delivery) => _ActiveDeliveryCard(
+
+                ...active.map(
+                      (delivery) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _ActiveDeliveryCard(
                       delivery: delivery,
                       onTap: () async {
                         await Navigator.push<void>(
                           context,
                           MaterialPageRoute(
                             builder: (_) =>
-                                CourierDeliveryPage(delivery: delivery),
+                                CourierDeliveryPage(
+                                  delivery: delivery,
+                                ),
                           ),
                         );
+
                         refresh();
                       },
-                    )),
-                const SizedBox(height: 24),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 30),
+
+                // =========================
+                // ENTREGADOS
+                // =========================
+
                 Row(
                   children: [
                     Expanded(
-                      child: Text('Entregados',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700)),
+                      child: Text(
+                        'Entregados',
+                        style:
+                        Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: _cerkaNavy,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
                     ),
+
                     if (delivered.isNotEmpty)
                       TextButton(
                         onPressed: () => Navigator.push<void>(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => CourierDeliveredOrdersPage(
-                              deliveries: delivered,
-                            ),
+                            builder: (_) =>
+                                CourierDeliveredOrdersPage(
+                                  deliveries: delivered,
+                                ),
                           ),
                         ),
                         style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFFEA580C)),
-                        child: const Text('Ver todos'),
+                          foregroundColor: _cerkaCoral,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('Ver todos'),
+                            SizedBox(width: 3),
+                            Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 11,
+                            ),
+                          ],
+                        ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 8),
+
+                const SizedBox(height: 12),
+
                 if (delivered.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Center(
-                        child: Text('Aún no tienes pedidos entregados.')),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 28,
+                      horizontal: 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: _cerkaDivider,
+                      ),
+                    ),
+                    child: const Column(
+                      children: [
+                        _CourierEmptyIcon(
+                          icon: Icons.check_circle_outline_rounded,
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          'Aún no tienes pedidos entregados',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _cerkaNavy,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: 5),
+                        Text(
+                          'Tus entregas completadas aparecerán aquí.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _cerkaGray,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ...recentDelivered.map((delivery) => _DeliveredOrderCard(
+
+                ...recentDelivered.map(
+                      (delivery) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _DeliveredOrderCard(
                       delivery: delivery,
                       onTap: () => Navigator.push<void>(
                         context,
                         MaterialPageRoute(
                           builder: (_) =>
-                              CourierDeliveryPage(delivery: delivery),
+                              CourierDeliveryPage(
+                                delivery: delivery,
+                              ),
                         ),
                       ),
-                    )),
+                    ),
+                  ),
+                ),
               ],
             ),
           );
         },
-      );
+      ),
+    );
+  }
+}
+
+class _CourierEmptyIcon extends StatelessWidget {
+  final IconData icon;
+
+  const _CourierEmptyIcon({
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 54,
+      height: 54,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE5E5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Icon(
+        icon,
+        size: 26,
+        color: const Color(0xFFFF5A5A),
+      ),
+    );
+  }
 }
 
 List<CourierDelivery> sortedDeliveredOrders(
@@ -873,17 +1192,31 @@ class _CourierNotificationsPageState
   late Future<List<CourierNotification>> future;
   Timer? fallbackRefresh;
 
+  static const Color _cerkaCoral = Color(0xFFFF5A5A);
+  static const Color _cerkaNavy = Color(0xFF0F1E3A);
+  static const Color _cerkaBackground = Color(0xFFF4F4F4);
+  static const Color _cerkaSoftCoral = Color(0xFFFFE5E5);
+  static const Color _cerkaGray = Color(0xFF647185);
+  static const Color _cerkaDivider = Color(0xFFE3E8F0);
+
   @override
   void initState() {
     super.initState();
+
     future = ref.read(courierRepositoryProvider).notifications();
-    fallbackRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) reload();
-    });
+
+    fallbackRefresh = Timer.periodic(
+      const Duration(seconds: 10),
+          (_) {
+        if (mounted) reload();
+      },
+    );
   }
 
   void reload() {
-    final next = ref.read(courierRepositoryProvider).notifications();
+    final next =
+    ref.read(courierRepositoryProvider).notifications();
+
     setState(() {
       future = next;
     });
@@ -901,107 +1234,574 @@ class _CourierNotificationsPageState
   }
 
   @override
-  Widget build(BuildContext context) => RefreshIndicator(
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: _cerkaBackground,
+      child: RefreshIndicator(
+        color: _cerkaCoral,
+        backgroundColor: Colors.white,
         onRefresh: refresh,
         child: FutureBuilder<List<CourierNotification>>(
           future: future,
           builder: (context, snapshot) {
+            // =========================
+            // ERROR
+            // =========================
+
             if (snapshot.hasError) {
               final message = ref
                   .read(apiClientProvider)
                   .exception(snapshot.error!)
                   .message;
+
               return ListView(
-                padding: const EdgeInsets.all(20),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  32,
+                ),
                 children: [
-                  Text('Notificaciones',
-                      style: Theme.of(context).textTheme.headlineMedium),
+                  _buildHeader(context),
+
                   const SizedBox(height: 24),
-                  _CourierError(message: message, onRetry: reload),
+
+                  _CourierError(
+                    message: message,
+                    onRetry: reload,
+                  ),
                 ],
               );
             }
-            final items = snapshot.data ?? const <CourierNotification>[];
+
+            final items =
+                snapshot.data ?? const <CourierNotification>[];
+
             return ListView(
-              padding: const EdgeInsets.all(20),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                32,
+              ),
               children: [
-                Text('Notificaciones',
-                    style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: 16),
-                if (snapshot.connectionState != ConnectionState.done)
-                  const LinearProgressIndicator(),
-                if (snapshot.connectionState == ConnectionState.done &&
-                    items.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Center(child: Text('No tienes notificaciones.')),
+                // =========================
+                // ENCABEZADO
+                // =========================
+
+                _buildHeader(context),
+
+                const SizedBox(height: 20),
+
+                // =========================
+                // CARGANDO
+                // =========================
+
+                if (snapshot.connectionState !=
+                    ConnectionState.done)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: const LinearProgressIndicator(
+                      color: _cerkaCoral,
+                      backgroundColor: _cerkaSoftCoral,
+                      minHeight: 4,
+                    ),
                   ),
-                ...items.map((item) => Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.notifications_active),
-                        title: Text(item.title),
-                        subtitle: Text(item.body),
-                        trailing: const Icon(Icons.chevron_right),
+
+                if (snapshot.connectionState !=
+                    ConnectionState.done)
+                  const SizedBox(height: 20),
+
+                // =========================
+                // ESTADO VACÍO
+                // =========================
+
+                if (snapshot.connectionState ==
+                    ConnectionState.done &&
+                    items.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 42,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: _cerkaDivider,
+                      ),
+                    ),
+                    child: const Column(
+                      children: [
+                        _CourierNotificationEmptyIcon(),
+
+                        SizedBox(height: 18),
+
+                        Text(
+                          'No tienes notificaciones',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _cerkaNavy,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+
+                        SizedBox(height: 7),
+
+                        Text(
+                          'Cuando recibas una actualización de tus entregas aparecerá aquí.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _cerkaGray,
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // =========================
+                // NOTIFICACIONES
+                // =========================
+
+                ...items.map(
+                      (item) => Padding(
+                    padding: const EdgeInsets.only(
+                      bottom: 12,
+                    ),
+                    child: Material(
+                      color: Colors.white,
+                      borderRadius:
+                      BorderRadius.circular(18),
+                      child: InkWell(
+                        borderRadius:
+                        BorderRadius.circular(18),
+
                         onTap: () async {
                           try {
                             final delivery = await ref
-                                .read(courierRepositoryProvider)
-                                .delivery(item.deliveryId);
+                                .read(
+                                courierRepositoryProvider)
+                                .delivery(
+                              item.deliveryId,
+                            );
+
                             if (!context.mounted) return;
+
                             await Navigator.push<void>(
                               context,
                               MaterialPageRoute(
                                 builder: (_) =>
-                                    CourierDeliveryPage(delivery: delivery),
+                                    CourierDeliveryPage(
+                                      delivery: delivery,
+                                    ),
                               ),
                             );
+
                             if (mounted) reload();
                           } catch (error) {
                             if (!context.mounted) return;
+
                             final message = ref
                                 .read(apiClientProvider)
                                 .exception(error)
                                 .message;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(message)),
+
+                            ScaffoldMessenger.of(context)
+                                .showSnackBar(
+                              SnackBar(
+                                content: Text(message),
+                              ),
                             );
                           }
                         },
+
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            borderRadius:
+                            BorderRadius.circular(18),
+                            border: Border.all(
+                              color: _cerkaDivider,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(
+                                  alpha: 0.025,
+                                ),
+                                blurRadius: 12,
+                                offset:
+                                const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            crossAxisAlignment:
+                            CrossAxisAlignment.center,
+                            children: [
+                              // Ícono
+                              Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: _cerkaSoftCoral,
+                                  borderRadius:
+                                  BorderRadius.circular(
+                                    15,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons
+                                      .notifications_active_outlined,
+                                  color: _cerkaCoral,
+                                  size: 24,
+                                ),
+                              ),
+
+                              const SizedBox(width: 14),
+
+                              // Texto
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.title,
+                                      maxLines: 2,
+                                      overflow:
+                                      TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: _cerkaNavy,
+                                        fontSize: 15,
+                                        fontWeight:
+                                        FontWeight.w800,
+                                        height: 1.25,
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 5),
+
+                                    Text(
+                                      item.body,
+                                      maxLines: 3,
+                                      overflow:
+                                      TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: _cerkaGray,
+                                        fontSize: 12.5,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              const SizedBox(width: 10),
+
+                              // Flecha
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: _cerkaBackground,
+                                  borderRadius:
+                                  BorderRadius.circular(
+                                    10,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons
+                                      .arrow_forward_ios_rounded,
+                                  size: 13,
+                                  color: _cerkaGray,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    )),
+                    ),
+                  ),
+                ),
               ],
             );
           },
         ),
-      );
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Notificaciones',
+          style:
+          Theme.of(context).textTheme.headlineMedium?.copyWith(
+            color: _cerkaNavy,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        const Text(
+          'Revisa las novedades de tus entregas',
+          style: TextStyle(
+            color: _cerkaGray,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CourierNotificationEmptyIcon extends StatelessWidget {
+  const _CourierNotificationEmptyIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE5E5),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Icon(
+        Icons.notifications_none_rounded,
+        color: Color(0xFFFF5A5A),
+        size: 30,
+      ),
+    );
+  }
 }
 
 class CourierProfilePage extends ConsumerWidget {
   const CourierProfilePage({super.key});
 
+  static const Color _cerkaCoral = Color(0xFFFF5A5A);
+  static const Color _cerkaNavy = Color(0xFF0F1E3A);
+  static const Color _cerkaBackground = Color(0xFFF4F4F4);
+  static const Color _cerkaSoftCoral = Color(0xFFFFE5E5);
+  static const Color _cerkaGray = Color(0xFF647185);
+  static const Color _cerkaDivider = Color(0xFFE3E8F0);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authControllerProvider).value;
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text('Perfil del repartidor',
-            style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.delivery_dining)),
-            title: Text(user?.firstName ?? ''),
-            subtitle: Text('Empresa: ${user?.tenantCode ?? ''}'),
+
+    return ColoredBox(
+      color: _cerkaBackground,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // =========================
+              // TÍTULO
+              // =========================
+
+              Text(
+                'Perfil del repartidor',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: _cerkaNavy,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              const Text(
+                'Información de tu cuenta',
+                style: TextStyle(
+                  color: _cerkaGray,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // =========================
+              // TARJETA PRINCIPAL
+              // =========================
+
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: _cerkaCoral,
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _cerkaCoral.withValues(alpha: 0.20),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        // Avatar
+                        Container(
+                          width: 62,
+                          height: 62,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.delivery_dining_rounded,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                        ),
+
+                        const SizedBox(width: 16),
+
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                user?.firstName ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+
+                              const SizedBox(height: 7),
+
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                  Colors.white.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text(
+                                  'REPARTIDOR',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 22),
+
+                    Container(
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.20),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    const Text(
+                      'Empresa',
+                      style: TextStyle(
+                        color: Color(0xFFFFE5E5),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.business_outlined,
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            user?.tenantCode ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const Spacer(),
+
+              // =========================
+              // CERRAR SESIÓN
+              // =========================
+
+              OutlinedButton.icon(
+                onPressed: () =>
+                    ref.read(authControllerProvider.notifier).logout(),
+                icon: const Icon(
+                  Icons.logout_rounded,
+                  size: 20,
+                ),
+                label: const Text(
+                  'Cerrar sesión',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _cerkaCoral,
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(
+                    color: _cerkaDivider,
+                  ),
+                  minimumSize: const Size.fromHeight(54),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 24),
-        OutlinedButton.icon(
-          onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-          icon: const Icon(Icons.logout),
-          label: const Text('Cerrar sesión'),
-        ),
-      ],
+      ),
     );
   }
 }

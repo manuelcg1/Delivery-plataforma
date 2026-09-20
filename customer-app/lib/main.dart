@@ -8,4 +8,5 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   FirebaseMessaging.onBackgroundMessage(courierFirebaseBackgroundHandler);
   runApp(const ProviderScope(child: CustomerApp()));
+
 }

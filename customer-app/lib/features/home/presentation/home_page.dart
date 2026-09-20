@@ -33,16 +33,11 @@ class HomePage extends ConsumerWidget {
 
     return DecoratedBox(
       decoration: const BoxDecoration(
-        color: Colors.white,
-        gradient: RadialGradient(
-          center: Alignment(1.08, -1.05),
-          radius: .72,
-          colors: [Color(0xFFFFF4E8), Colors.white],
-          stops: [0, .72],
-        ),
+        color: Color(0xFFF4F4F4),
       ),
       child: RefreshIndicator(
-        color: _homeOrange,
+        color: const Color(0xFFFF5A5A),
+        backgroundColor: Colors.white,
         onRefresh: () async {
           ref.invalidate(addressesProvider);
           ref.invalidate(merchantsProvider);
@@ -50,7 +45,9 @@ class HomePage extends ConsumerWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final horizontalPadding = constraints.maxWidth >= 700 ? 40.0 : 20.0;
+
             final contentWidth = constraints.maxWidth >= 900 ? 760.0 : 680.0;
+
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(
@@ -62,31 +59,77 @@ class HomePage extends ConsumerWidget {
               children: [
                 Center(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: contentWidth),
+                    constraints: BoxConstraints(
+                      maxWidth: contentWidth,
+                    ),
                     child: _HomeEntrance(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'Hola, ${user?.firstName ?? ''}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              color: _homeNavy,
-                              fontSize: constraints.maxWidth < 350 ? 26 : 28,
-                              height: 1.15,
-                              fontWeight: FontWeight.w700,
-                            ),
+                          //
+                          // SALUDO
+                          //
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Hola, ${user?.firstName ?? ''}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.poppins(
+                                        color: const Color(
+                                          0xFF0F1E3A,
+                                        ),
+                                        fontSize: constraints.maxWidth < 350
+                                            ? 26
+                                            : 28,
+                                        height: 1.15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      '¿Qué quieres pedir hoy?',
+                                      style: GoogleFonts.poppins(
+                                        color: const Color(
+                                          0xFF647185,
+                                        ),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              //
+                              // ICONO PERFIL VISUAL
+                              //
+                              Container(
+                                width: 46,
+                                height: 46,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFE5E5),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: const Icon(
+                                  Icons.person_outline_rounded,
+                                  color: Color(0xFFFF5A5A),
+                                  size: 24,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '¿Qué quieres pedir hoy?',
-                            style: GoogleFonts.poppins(
-                              color: _homeSecondary,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
+
+                          const SizedBox(height: 22),
+
+                          //
+                          // DIRECCIÓN
+                          //
                           addresses.when(
                             data: (items) => _AddressHomeCard(
                               label: items.isEmpty
@@ -105,25 +148,72 @@ class HomePage extends ConsumerWidget {
                             loading: () => const _HomeCardSkeleton(),
                             error: (_, __) => const SizedBox.shrink(),
                           ),
-                          const SizedBox(height: 18),
-                          Text(
-                            'Comercios disponibles',
-                            style: GoogleFonts.poppins(
-                              color: _homeNavy,
-                              fontSize: constraints.maxWidth < 350 ? 18 : 19,
-                              fontWeight: FontWeight.w700,
-                            ),
+
+                          const SizedBox(height: 26),
+
+                          //
+                          // ENCABEZADO COMERCIOS
+                          //
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Comercios disponibles',
+                                  style: GoogleFonts.poppins(
+                                    color: const Color(
+                                      0xFF0F1E3A,
+                                    ),
+                                    fontSize:
+                                        constraints.maxWidth < 350 ? 18 : 20,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFE5E5),
+                                  borderRadius: BorderRadius.circular(11),
+                                ),
+                                child: const Icon(
+                                  Icons.storefront_outlined,
+                                  color: Color(0xFFFF5A5A),
+                                  size: 19,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
+
+                          const SizedBox(height: 14),
+
+                          //
+                          // COMERCIOS
+                          //
                           merchants.when(
                             data: (items) {
                               if (items.isEmpty) {
-                                return const EmptyState(
-                                  title: 'Sin comercios',
-                                  message: 'No hay comercios activos con '
-                                      'sucursales disponibles.',
+                                return Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(
+                                      18,
+                                    ),
+                                    border: Border.all(
+                                      color: const Color(
+                                        0xFFE3E8F0,
+                                      ),
+                                    ),
+                                  ),
+                                  child: const EmptyState(
+                                    title: 'Sin comercios',
+                                    message:
+                                        'No hay comercios activos con sucursales disponibles.',
+                                  ),
                                 );
                               }
+
                               return Column(
                                 children: [
                                   for (var index = 0;
@@ -131,7 +221,9 @@ class HomePage extends ConsumerWidget {
                                       index++) ...[
                                     _MerchantHomeCard(
                                       merchant: items[index],
-                                      onTap: () => Navigator.of(context).push(
+                                      onTap: () => Navigator.of(
+                                        context,
+                                      ).push(
                                         MaterialPageRoute<void>(
                                           builder: (_) => MerchantPage(
                                             merchant: items[index],
@@ -140,7 +232,9 @@ class HomePage extends ConsumerWidget {
                                       ),
                                     ),
                                     if (index < items.length - 1)
-                                      const SizedBox(height: 8),
+                                      const SizedBox(
+                                        height: 12,
+                                      ),
                                   ],
                                 ],
                               );
@@ -148,13 +242,15 @@ class HomePage extends ConsumerWidget {
                             loading: () => const Column(
                               children: [
                                 _HomeCardSkeleton(),
-                                SizedBox(height: 8),
+                                SizedBox(height: 12),
                                 _HomeCardSkeleton(),
                               ],
                             ),
                             error: (error, _) => ErrorState(
                               message: error.toString(),
-                              onRetry: () => ref.invalidate(merchantsProvider),
+                              onRetry: () => ref.invalidate(
+                                merchantsProvider,
+                              ),
                             ),
                           ),
                         ],
@@ -462,88 +558,398 @@ class _HomeCardSkeleton extends StatelessWidget {
 class AddressesPage extends ConsumerWidget {
   const AddressesPage({super.key});
 
-  Future<void> _openForm(BuildContext context, Address? address) =>
+  Future<void> _openForm(
+    BuildContext context,
+    Address? address,
+  ) =>
       Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-              builder: (_) => CustomerAddressFormPage(address: address)));
+        context,
+        MaterialPageRoute(
+          builder: (_) => CustomerAddressFormPage(
+            address: address,
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => Scaffold(
-        appBar: AppBar(title: const Text('Mis direcciones')),
+        backgroundColor: const Color(0xFFF4F4F4),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFFF4F4F4),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          titleSpacing: 20,
+          iconTheme: const IconThemeData(
+            color: Color(0xFF0F1E3A),
+          ),
+          title: const Text(
+            'Mis direcciones',
+            style: TextStyle(
+              color: Color(0xFF0F1E3A),
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _openForm(context, null),
-          icon: const Icon(Icons.add),
-          label: const Text('Agregar dirección'),
+          backgroundColor: const Color(0xFFFF5A5A),
+          foregroundColor: Colors.white,
+          elevation: 2,
+          onPressed: () => _openForm(
+            context,
+            null,
+          ),
+          icon: const Icon(
+            Icons.add_location_alt_outlined,
+          ),
+          label: const Text(
+            'Agregar dirección',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
         body: ref.watch(addressesProvider).when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(
+                child: CircularProgressIndicator(
+                  color: Color(0xFFFF5A5A),
+                ),
+              ),
               error: (error, _) => ErrorState(
                 message: error.toString(),
-                onRetry: () => ref.invalidate(addressesProvider),
+                onRetry: () => ref.invalidate(
+                  addressesProvider,
+                ),
               ),
-              data: (addresses) => addresses.isEmpty
-                  ? Center(
-                      child: FilledButton.icon(
-                        onPressed: () => _openForm(context, null),
-                        icon: const Icon(Icons.add_location_alt_outlined),
-                        label: const Text('Agregar una dirección'),
+              data: (addresses) {
+                if (addresses.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
                       ),
-                    )
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                      children: addresses
-                          .map(
-                            (address) => Card(
-                              child: ListTile(
-                                leading: Icon(address.isDefault
-                                    ? Icons.home
-                                    : Icons.location_on_outlined),
-                                title: Text(address.label),
-                                subtitle: Text(
-                                  '${address.addressLine}\n${address.district}',
-                                ),
-                                isThreeLine: true,
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (!address.isDefault)
-                                      IconButton(
-                                        tooltip: 'Usar como predeterminada',
-                                        icon: const Icon(Icons.star_border),
-                                        onPressed: () async {
-                                          await ref
-                                              .read(customerRepositoryProvider)
-                                              .makeDefaultAddress(address.id);
-                                          ref.invalidate(addressesProvider);
-                                        },
-                                      ),
-                                    IconButton(
-                                      tooltip: 'Editar dirección',
-                                      icon: const Icon(Icons.edit_outlined),
-                                      onPressed: () =>
-                                          _openForm(context, address),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Eliminar dirección',
-                                      icon: const Icon(Icons.delete_outline),
-                                      onPressed: () async {
-                                        await ref
-                                            .read(customerRepositoryProvider)
-                                            .deleteAddress(address.id);
-                                        ref.invalidate(addressesProvider);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                onTap: () => _openForm(context, address),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 82,
+                            height: 82,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFFE5E5),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.location_on_outlined,
+                              color: Color(0xFFFF5A5A),
+                              size: 38,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Aún no tienes direcciones',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF0F1E3A),
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Agrega una dirección para validar cobertura y recibir tus pedidos.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF647185),
+                              fontSize: 14,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF5A5A),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(52),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                          )
-                          .toList(),
+                            onPressed: () => _openForm(
+                              context,
+                              null,
+                            ),
+                            icon: const Icon(
+                              Icons.add_location_alt_outlined,
+                            ),
+                            label: const Text(
+                              'Agregar una dirección',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                  );
+                }
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    20,
+                    12,
+                    20,
+                    112,
+                  ),
+                  children: [
+                    const Text(
+                      'Direcciones guardadas',
+                      style: TextStyle(
+                        color: Color(0xFF0F1E3A),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    ...addresses.map(
+                      (address) => Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: 12,
+                        ),
+                        child: Material(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(18),
+                            onTap: () => _openForm(
+                              context,
+                              address,
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: const Color(0xFFE3E8F0),
+                                ),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x080F1E3A),
+                                    blurRadius: 14,
+                                    offset: Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: address.isDefault
+                                          ? const Color(
+                                              0xFFFFE5E5,
+                                            )
+                                          : const Color(
+                                              0xFFF4F4F4,
+                                            ),
+                                      borderRadius: BorderRadius.circular(
+                                        14,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      address.isDefault
+                                          ? Icons.home_rounded
+                                          : Icons.location_on_outlined,
+                                      color: address.isDefault
+                                          ? const Color(
+                                              0xFFFF5A5A,
+                                            )
+                                          : const Color(
+                                              0xFF647185,
+                                            ),
+                                      size: 23,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                address.label,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Color(
+                                                    0xFF0F1E3A,
+                                                  ),
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                            if (address.isDefault)
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(
+                                                    0xFFFFE5E5,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                    99,
+                                                  ),
+                                                ),
+                                                child: const Text(
+                                                  'Principal',
+                                                  style: TextStyle(
+                                                    color: Color(
+                                                      0xFFFF5A5A,
+                                                    ),
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          address.addressLine,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(
+                                              0xFF647185,
+                                            ),
+                                            fontSize: 13,
+                                            height: 1.35,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Row(
+                                          children: [
+                                            if (!address.isDefault)
+                                              _AddressActionButton(
+                                                tooltip:
+                                                    'Usar como predeterminada',
+                                                icon: Icons.star_border_rounded,
+                                                onPressed: () async {
+                                                  await ref
+                                                      .read(
+                                                        customerRepositoryProvider,
+                                                      )
+                                                      .makeDefaultAddress(
+                                                        address.id,
+                                                      );
+
+                                                  ref.invalidate(
+                                                    addressesProvider,
+                                                  );
+                                                },
+                                              ),
+                                            if (!address.isDefault)
+                                              const SizedBox(
+                                                width: 8,
+                                              ),
+                                            _AddressActionButton(
+                                              tooltip: 'Editar dirección',
+                                              icon: Icons.edit_outlined,
+                                              onPressed: () => _openForm(
+                                                context,
+                                                address,
+                                              ),
+                                            ),
+                                            const SizedBox(
+                                              width: 8,
+                                            ),
+                                            _AddressActionButton(
+                                              tooltip: 'Eliminar dirección',
+                                              icon:
+                                                  Icons.delete_outline_rounded,
+                                              destructive: true,
+                                              onPressed: () async {
+                                                await ref
+                                                    .read(
+                                                      customerRepositoryProvider,
+                                                    )
+                                                    .deleteAddress(
+                                                      address.id,
+                                                    );
+
+                                                ref.invalidate(
+                                                  addressesProvider,
+                                                );
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
       );
+}
+
+class _AddressActionButton extends StatelessWidget {
+  const _AddressActionButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.destructive = false,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        destructive ? const Color(0xFFFF5A5A) : const Color(0xFF647185);
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: destructive ? const Color(0xFFFFF2F2) : const Color(0xFFF4F4F4),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onPressed,
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: Icon(
+              icon,
+              size: 19,
+              color: color,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class AddressDialog extends ConsumerStatefulWidget {
@@ -650,109 +1056,471 @@ class _AddressDialogState extends ConsumerState<AddressDialog> {
       );
 }
 
-class MerchantPage extends ConsumerWidget {
+class MerchantPage extends ConsumerStatefulWidget {
   const MerchantPage({super.key, required this.merchant});
   final Merchant merchant;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MerchantPage> createState() => _MerchantPageState();
+}
+
+class _MerchantPageState extends ConsumerState<MerchantPage> {
+  String query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final merchant = widget.merchant;
     final favorites = ref.watch(favoritesProvider);
     final favorite = favoriteForMerchant(
       favorites.valueOrNull ?? const <Favorite>[],
       merchant.id,
     );
+
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F4F4),
       appBar: AppBar(
-          title: Row(children: [
+        backgroundColor: const Color(0xFFF4F4F4),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        toolbarHeight: 74,
+        titleSpacing: 8,
+        iconTheme: const IconThemeData(
+          color: Color(0xFF0F1E3A),
+        ),
+        title: Row(
+          children: [
             Hero(
               tag: 'merchant-avatar-${merchant.id}',
-              child: _MerchantLogo(merchant: merchant, size: 36),
+              child: _MerchantLogo(
+                merchant: merchant,
+                size: 40,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(merchant.name, overflow: TextOverflow.ellipsis),
+              child: Text(
+                merchant.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  color: const Color(0xFF0F1E3A),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-          ]),
-          actions: [
-            IconButton(
+          ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color:
+                    favorite == null ? Colors.white : const Color(0xFFFFE5E5),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                  color: favorite == null
+                      ? const Color(0xFFE3E8F0)
+                      : const Color(0xFFFFCACA),
+                ),
+              ),
+              child: IconButton(
                 tooltip: favorite == null
                     ? 'Agregar a favoritos'
                     : 'Quitar de favoritos',
+                padding: EdgeInsets.zero,
                 icon: Icon(
-                  favorite == null ? Icons.favorite_border : Icons.favorite,
-                  color: favorite == null ? null : Colors.red,
+                  favorite == null
+                      ? Icons.favorite_border_rounded
+                      : Icons.favorite_rounded,
+                  color: const Color(0xFFFF5A5A),
+                  size: 22,
                 ),
                 onPressed: favorites.isLoading
                     ? null
                     : () async {
                         final repository = ref.read(customerRepositoryProvider);
+
                         if (favorite == null) {
-                          await repository.addMerchantFavorite(merchant.id);
+                          await repository.addMerchantFavorite(
+                            merchant.id,
+                          );
                         } else {
-                          await repository.removeFavorite(favorite.id);
+                          await repository.removeFavorite(
+                            favorite.id,
+                          );
                         }
+
                         ref.invalidate(favoritesProvider);
+
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(favorite == null
-                                ? 'Comercio agregado a favoritos'
-                                : 'Comercio eliminado de favoritos'),
-                          ));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: const Color(0xFF0F1E3A),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              content: Text(
+                                favorite == null
+                                    ? 'Comercio agregado a favoritos'
+                                    : 'Comercio eliminado de favoritos',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          );
                         }
-                      })
-          ]),
+                      },
+              ),
+            ),
+          ),
+        ],
+      ),
       body: FutureBuilder<List<Product>>(
         future:
             ref.read(customerRepositoryProvider).products(merchant.branchId),
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done)
-            return const Center(child: CircularProgressIndicator());
-          if (snapshot.hasError)
-            return ErrorState(message: snapshot.error.toString());
-          final products = snapshot.data!;
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text(
-                merchant.branchName,
-                style: Theme.of(context).textTheme.titleMedium,
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFFFF5A5A),
               ),
-              ...products.map(
-                (product) => Card(
-                  child: ListTile(
-                    title: Text(product.name),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(product.description,
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${product.currency} ${product.price.toStringAsFixed(2)}',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ],
+            );
+          }
+
+          if (snapshot.hasError) {
+            return ErrorState(
+              message: snapshot.error.toString(),
+            );
+          }
+
+          final products = filterMerchantProducts(snapshot.data!, query);
+
+          return DecoratedBox(
+            decoration: const BoxDecoration(
+              color: Color(0xFFF4F4F4),
+            ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                20,
+                8,
+                20,
+                40,
+              ),
+              children: [
+                //
+                // Información del comercio
+                //
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: const Color(0xFFE3E8F0),
                     ),
-                    trailing: _ProductThumbnail(product: product),
-                    contentPadding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
-                    onTap: () async {
-                      final result = await Navigator.of(context).push(
-                        MaterialPageRoute<ProductAddedResult>(
-                          builder: (_) =>
-                              ProductPage(merchant: merchant, product: product),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x080F1E3A),
+                        blurRadius: 14,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFE5E5),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      );
-                      if (result == null || !context.mounted) return;
-                      ref.invalidate(cartProvider);
-                    },
+                        child: const Icon(
+                          Icons.storefront_outlined,
+                          color: Color(0xFFFF5A5A),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              merchant.branchName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                color: const Color(0xFF0F1E3A),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (merchant.description.trim().isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                merchant.description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.poppins(
+                                  color: const Color(
+                                    0xFF647185,
+                                  ),
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 18),
+
+                //
+                // Buscador
+                //
+                SearchBar(
+                  hintText: 'Buscar en ${merchant.name}',
+                  leading: const Icon(
+                    Icons.search_rounded,
+                    color: Color(0xFFFF5A5A),
+                  ),
+                  hintStyle: const WidgetStatePropertyAll(
+                    TextStyle(
+                      color: Color(0xFF647185),
+                      fontSize: 14,
+                    ),
+                  ),
+                  textStyle: const WidgetStatePropertyAll(
+                    TextStyle(
+                      color: Color(0xFF0F1E3A),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  elevation: const WidgetStatePropertyAll(0),
+                  backgroundColor: const WidgetStatePropertyAll(
+                    Colors.white,
+                  ),
+                  side: const WidgetStatePropertyAll(
+                    BorderSide(
+                      color: Color(0xFFE3E8F0),
+                    ),
+                  ),
+                  shape: WidgetStatePropertyAll(
+                    RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  padding: const WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(
+                      horizontal: 16,
+                    ),
+                  ),
+                  onChanged: (value) => setState(() => query = value),
+                ),
+
+                const SizedBox(height: 26),
+
+                //
+                // Título productos
+                //
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        query.trim().isEmpty ? 'Productos' : 'Resultados',
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFF0F1E3A),
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (products.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFE5E5),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          '${products.length}',
+                          style: const TextStyle(
+                            color: Color(0xFFFF5A5A),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                //
+                // Productos
+                //
+                if (products.isEmpty)
+                  EmptyState(
+                    title: query.trim().isEmpty
+                        ? 'Sin productos'
+                        : 'Sin resultados',
+                    message: query.trim().isEmpty
+                        ? 'Este comercio todavía no tiene productos disponibles.'
+                        : 'No encontramos productos que coincidan con tu búsqueda.',
+                  )
+                else
+                  ...products.map(
+                    (product) => Padding(
+                      padding: const EdgeInsets.only(
+                        bottom: 12,
+                      ),
+                      child: _MerchantProductCard(
+                        product: product,
+                        onTap: () async {
+                          final detailedProduct = await ref
+                              .read(customerRepositoryProvider)
+                              .product(product.id);
+                          if (!context.mounted) return;
+                          final result = await Navigator.of(context).push(
+                            MaterialPageRoute<ProductAddedResult>(
+                              builder: (_) => ProductPage(
+                                merchant: merchant,
+                                product: product.copyWithCatalogDetails(
+                                  detailedProduct,
+                                ),
+                              ),
+                            ),
+                          );
+
+                          if (result == null || !context.mounted) {
+                            return;
+                          }
+
+                          ref.invalidate(cartProvider);
+                        },
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           );
         },
       ),
     );
   }
+}
+
+List<Product> filterMerchantProducts(List<Product> products, String query) {
+  final normalized = query.trim().toLowerCase();
+  if (normalized.isEmpty) return products;
+  return products
+      .where((product) =>
+          product.name.toLowerCase().contains(normalized) ||
+          product.description.toLowerCase().contains(normalized))
+      .toList(growable: false);
+}
+
+String merchantProductPrice(Product product) {
+  final symbol = switch (product.currency.toUpperCase()) {
+    'PEN' => 'S/',
+    'USD' => r'$',
+    _ => product.currency,
+  };
+  return '$symbol ${product.price.toStringAsFixed(2)}';
+}
+
+class _MerchantProductCard extends StatelessWidget {
+  const _MerchantProductCard({required this.product, required this.onTap});
+  final Product product;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: '${product.name}, ${merchantProductPrice(product)}',
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Ink(
+              height: 152,
+              decoration: BoxDecoration(
+                border: Border.all(color: _homeDivider),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 12, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            product.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              color: _homeNavy,
+                              fontSize: 16,
+                              height: 1.2,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Expanded(
+                            child: Text(
+                              product.description,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                color: _homeSecondary,
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            merchantProductPrice(product),
+                            style: GoogleFonts.poppins(
+                              color: _homeNavy,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 5,
+                    child: _ProductThumbnail(product: product),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class _ProductThumbnail extends StatelessWidget {
@@ -769,9 +1537,10 @@ class _ProductThumbnail extends StatelessWidget {
     );
     final image = product.primaryImage;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox.square(
-        dimension: 82,
+      borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
+      child: SizedBox(
+        height: double.infinity,
+        width: double.infinity,
         child: image == null || image.url.isEmpty
             ? fallback
             : CachedNetworkImage(

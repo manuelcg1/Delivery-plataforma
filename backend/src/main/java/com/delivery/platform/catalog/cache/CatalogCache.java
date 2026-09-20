@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class CatalogCache {
+    private static final String CACHE_SCHEMA_VERSION = "2";
     private final StringRedisTemplate redis;
     private final ObjectMapper json;
     private final Duration ttl;
@@ -26,27 +27,37 @@ public class CatalogCache {
         String key = key(tenantId, resource);
         try {
             String cached = redis.opsForValue().get(key);
-            if (cached != null) return json.readValue(cached, type);
-        } catch (Exception ignored) { }
+            if (cached != null)
+                return json.readValue(cached, type);
+        } catch (Exception ignored) {
+        }
         T value = loader.get();
         try {
             redis.opsForValue().set(key, json.writeValueAsString(value), ttl);
-        } catch (Exception ignored) { }
+        } catch (Exception ignored) {
+        }
         return value;
     }
 
     public void invalidate(UUID tenantId) {
-        try { redis.opsForValue().increment(versionKey(tenantId)); } catch (Exception ignored) { }
+        try {
+            redis.opsForValue().increment(versionKey(tenantId));
+        } catch (Exception ignored) {
+        }
     }
 
     private String key(UUID tenantId, String resource) {
         String version = "0";
         try {
             String stored = redis.opsForValue().get(versionKey(tenantId));
-            if (stored != null) version = stored;
-        } catch (Exception ignored) { }
-        return "catalog:tenant:" + tenantId + ":v" + version + ":" + resource;
+            if (stored != null)
+                version = stored;
+        } catch (Exception ignored) {
+        }
+        return "catalog:s" + CACHE_SCHEMA_VERSION + ":tenant:" + tenantId + ":v" + version + ":" + resource;
     }
 
-    private String versionKey(UUID tenantId) { return "catalog:tenant:" + tenantId + ":version"; }
+    private String versionKey(UUID tenantId) {
+        return "catalog:tenant:" + tenantId + ":version";
+    }
 }
