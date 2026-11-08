@@ -108,3 +108,18 @@ al completar las pruebas; los servicios y datos reales no se modificaron.
 
 La aprobación final de producción requiere completar estas condiciones y la CI
 del commit concreto que se vaya a desplegar.
+
+## Corrección del primer resultado de CI
+
+En el commit `2d6fc2c5`, ambos eventos (push y pull_request) pasaron backend,
+administrador, portal y configuración. El trabajo móvil pasó formato, análisis y
+pruebas, pero falló al compilar release con `What went wrong: 25.0.5`.
+
+El trabajo Android no fijaba el JDK y utilizó Java 25, incompatible con el wrapper
+Gradle 8.14. Se añadió `actions/setup-java` con Temurin 21 y se indica explícitamente
+a Flutter usar `$JAVA_HOME`, también para la firma efímera y la compilación. Es el
+JDK utilizado en la validación local satisfactoria del release.
+
+Referencia: [matriz oficial Java/Gradle](https://docs.gradle.org/current/userguide/compatibility.html#java).
+Debe subirse esta corrección a la misma rama y comprobar el nuevo resultado de CI;
+el resultado anterior no cambia hasta ejecutar el workflow del nuevo commit.

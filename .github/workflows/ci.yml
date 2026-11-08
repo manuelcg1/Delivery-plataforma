@@ -75,11 +75,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.7'
           channel: stable
           cache: true
+      - name: Use Java 21 for Android builds
+        run: |
+          flutter config --jdk-dir "$JAVA_HOME"
+          java -version
       - run: flutter pub get
         working-directory: customer-app
       - run: dart format --set-exit-if-changed lib test
