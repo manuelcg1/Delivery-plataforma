@@ -41,6 +41,13 @@ public class MerchantMediaService {
         this.storage = storage;
     }
 
+    public MerchantImage read(IdentityPrincipal principal, UUID merchantId, Type type) {
+        support.merchant(principal, merchantId);
+        String key = db.sql("select " + type.column + " from merchants where id=:id and tenant_id=:tenant")
+                .param("id", merchantId).param("tenant", principal.tenantId()).query(String.class).optional().orElse(null);
+        return new MerchantImage(type.name(), key == null || key.isBlank() ? null : storage.signedUrl(key));
+    }
+
     @Transactional
     public MerchantImage upload(IdentityPrincipal principal, UUID merchantId, Type type, MultipartFile file) {
         support.merchant(principal, merchantId);

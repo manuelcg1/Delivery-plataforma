@@ -10,6 +10,20 @@ class AuthServiceTest {
     void tenantRegistrationGrantsPermissionsIdempotently() {
         assertThat(AuthService.GRANT_ALL_PERMISSIONS_SQL)
                 .contains("role_permissions(role_id,permission_id)")
+                .contains("module <> 'PLATFORM'")
                 .containsIgnoringCase("on conflict do nothing");
+    }
+
+    @Test void normalizesPeruvianMobilePhone() {
+        assertThat(AuthService.normalizeMobilePhone("987 654-321")).isEqualTo("+51987654321");
+        assertThat(AuthService.normalizeMobilePhone("+51 (987) 654-321")).isEqualTo("+51987654321");
+    }
+    @Test void rejectsMissingForeignAndMalformedMobilePhone() {
+        for(String phone: new String[]{"", "123456789", "+52987654321", "51987654321", "98765432a", "+519876543210"}) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> AuthService.normalizeMobilePhone(phone))
+                .isInstanceOf(com.delivery.platform.common.ApiException.class);
+        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> AuthService.normalizeMobilePhone(null))
+            .isInstanceOf(com.delivery.platform.common.ApiException.class);
     }
 }

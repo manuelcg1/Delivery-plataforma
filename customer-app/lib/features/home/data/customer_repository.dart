@@ -36,10 +36,12 @@ class Merchant {
     required this.branchId,
     required this.branchName,
     required this.currency,
+    this.merchantType = 'OTHER',
     this.logoUrl,
     this.bannerUrl,
   });
   final String id, code, name, description, branchId, branchName, currency;
+  final String merchantType;
   final String? logoUrl, bannerUrl;
   factory Merchant.fromJson(Map<String, dynamic> j) => Merchant(
         id: j['id'] as String,
@@ -49,6 +51,7 @@ class Merchant {
         branchId: j['branchId'] as String,
         branchName: j['branchName'] as String,
         currency: j['currency'] as String,
+        merchantType: j['merchantType']?.toString() ?? 'OTHER',
         logoUrl: _optionalUrl(j['logoUrl']),
         bannerUrl: _optionalUrl(j['bannerUrl']),
       );
@@ -191,9 +194,44 @@ Favorite? favoriteForMerchant(List<Favorite> favorites, String merchantId) {
   return null;
 }
 
+class BranchAvailability {
+  const BranchAvailability({
+    required this.branchId,
+    required this.open,
+    required this.status,
+    required this.timezone,
+    this.nextOpeningAt,
+    this.currentSchedule,
+  });
+  final String branchId, status, timezone;
+  final bool open;
+  final DateTime? nextOpeningAt;
+  final Map<String, dynamic>? currentSchedule;
+
+  factory BranchAvailability.fromJson(Map<String, dynamic> json) =>
+      BranchAvailability(
+        branchId: json['branchId'] as String,
+        open: json['open'] as bool,
+        status: json['status'] as String,
+        timezone: json['timezone'] as String,
+        nextOpeningAt: json['nextOpeningAt'] == null
+            ? null
+            : DateTime.parse(json['nextOpeningAt'] as String),
+        currentSchedule: json['currentSchedule'] as Map<String, dynamic>?,
+      );
+}
+
 class CustomerRepository {
   CustomerRepository(this.api);
   final ApiClient api;
+
+  Future<BranchAvailability> availability(String branchId) async {
+    final response = await api.dio.get<Map<String, dynamic>>(
+      '/api/v1/customer/branches/$branchId/availability',
+    );
+    return BranchAvailability.fromJson(response.data!);
+  }
+
   Future<List<Address>> addresses() async {
     final r = await api.dio.get<List<dynamic>>('/api/v1/customer/addresses');
     return r.data!

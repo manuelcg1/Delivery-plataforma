@@ -66,15 +66,23 @@ public class PlatformOwnerBootstrap {
 
         UUID tenantId = db.sql("select id from tenants where code='platform'").query(UUID.class).single();
         UUID userId = UUID.randomUUID();
+        String passwordHash = passwords.encode(initialPassword);
         db.sql("""
-                insert into users(id,tenant_id,email,username,password_hash,first_name,last_name,status,
+                insert into identity_accounts(id,email,legacy_email,password_hash,status,email_conflict)
+                values(:id,:email,:email,:password,'ACTIVE',false)
+                """)
+                .param("id", userId).param("email", email).param("password", passwordHash).update();
+        db.sql("""
+                insert into users(id,tenant_id,identity_id,email,username,password_hash,first_name,last_name,status,
                                   email_verified,must_change_password)
-                values(:id,:tenant,:email,:username,:password,'Platform','Owner','ACTIVE',true,true)
+                values(:id,:tenant,:id,:email,:username,:password,'Platform','Owner','ACTIVE',true,true)
                 """)
                 .param("id", userId).param("tenant", tenantId).param("email", email)
                 .param("username", username).param("password", passwords.encode(initialPassword)).update();
         db.sql("insert into user_roles(user_id,role_id) values(:user,:role)")
                 .param("user", userId).param("role", roleId).update();
+        db.sql("insert into tenant_memberships(identity_id,tenant_id,user_id) values(:identity,:tenant,:user)")
+                .param("identity", userId).param("tenant", tenantId).param("user", userId).update();
         db.sql("""
                 insert into audit_logs(tenant_id,user_id,action,entity_type,entity_id,metadata)
                 values(:tenant,:user,'PLATFORM_OWNER_CREATED','USER',:user,

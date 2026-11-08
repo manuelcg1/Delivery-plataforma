@@ -11,18 +11,21 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.delivery.platform.tracking.realtime.RealtimeGateway;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class MerchantPortalServiceTest {
-    @Test void rejectsPlatformOwnerFromMerchantPortal() {
-        var service = new MerchantPortalService(mock(JdbcClient.class), mock(RealtimeGateway.class));
-        var principal = new IdentityPrincipal(UUID.randomUUID(), UUID.randomUUID(), "platform",
-            Set.of("ROLE_PLATFORM_OWNER"), Set.of("PLATFORM_MANAGE"));
+    @Test void allowsPlatformOwnerInAValidatedOperationalTenantContext() {
+        JdbcClient db = mock(JdbcClient.class, RETURNS_DEEP_STUBS);
+        var service = new MerchantPortalService(db, mock(RealtimeGateway.class));
+        UUID tenant = UUID.randomUUID();
+        var principal = new IdentityPrincipal(UUID.randomUUID(), tenant, "north-shop",
+            Set.of("ROLE_PLATFORM_OWNER", "TENANT_ADMIN"), Set.of("PLATFORM_MANAGE", "MERCHANT_PORTAL_ACCESS"));
 
-        ApiException error = assertThrows(ApiException.class, () -> service.context(principal));
-        assertEquals("PLATFORM_OWNER_PORTAL_FORBIDDEN", error.code);
+        var context = service.context(principal);
+
+        assertEquals(tenant, context.tenantId());
     }
     @Test void acceptsOnlyOperationalOrderTransitions() {
         assertDoesNotThrow(() -> MerchantPortalService.validateTransition("PENDING", "CONFIRMED"));

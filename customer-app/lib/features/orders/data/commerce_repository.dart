@@ -1,11 +1,11 @@
 import 'package:dio/dio.dart';
+import 'yape_checkout.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/api/api_client.dart';
-import '../../../core/offline/offline_cache.dart';
+import '../../../core/offline/customer_cache.dart';
 
 const checkoutPaymentMethods = <String, String>{
-  'CARD': 'Pago con tarjeta (simulado)',
-  'CASH_ON_DELIVERY': 'Pago contra entrega',
+  'YAPE': 'Yape',
 };
 
 class CartItem {
@@ -25,15 +25,20 @@ class CartItem {
         name: j['productName'] as String,
         quantity: j['quantity'] as int,
         subtotal: (j['subtotal'] as num).toDouble(),
-        options: (j['options'] as List<dynamic>? ?? const []).map((option)=>CartItemOption.fromJson(option as Map<String,dynamic>)).toList(growable:false),
+        options: (j['options'] as List<dynamic>? ?? const [])
+            .map((option) =>
+                CartItemOption.fromJson(option as Map<String, dynamic>))
+            .toList(growable: false),
       );
 }
 
 class CartItemOption {
-  const CartItemOption({required this.name,required this.priceAdjustment});
+  const CartItemOption({required this.name, required this.priceAdjustment});
   final String name;
   final double priceAdjustment;
-  factory CartItemOption.fromJson(Map<String,dynamic> json)=>CartItemOption(name:json['itemName'] as String,priceAdjustment:(json['priceAdjustment'] as num).toDouble());
+  factory CartItemOption.fromJson(Map<String, dynamic> json) => CartItemOption(
+      name: json['itemName'] as String,
+      priceAdjustment: (json['priceAdjustment'] as num).toDouble());
 }
 
 class Cart {
@@ -130,6 +135,7 @@ class CoverageResult {
 }
 
 String coverageMessageForCode(String? code) => switch (code) {
+      'OUTSIDE_BUSINESS_HOURS' => 'Fuera de horario de atención',
       'COVERAGE_NOT_CONFIGURED' =>
         'Esta sucursal todavía no tiene una zona de reparto configurada.',
       'BRANCH_LOCATION_MISSING' ||
@@ -226,12 +232,14 @@ class CommerceRepository {
   String coverageErrorMessage(Object error) =>
       coverageMessageForCode(api.exception(error).code);
   Future<Cart> cart() async {
+    final cache = await CustomerCache.capture(api);
     try {
       final r = await api.dio.get<Map<String, dynamic>>('/api/v1/cart');
-      await OfflineCache.write('cart:last', r.data!);
+      await cache.write('cart:last', r.data!);
       return Cart.fromJson(r.data!);
     } catch (error) {
-      final cached = await OfflineCache.read('cart:last');
+      if (!CustomerCache.permitsFallback(error)) rethrow;
+      final cached = await cache.read('cart:last');
       if (cached is Map<String, dynamic>) return Cart.fromJson(cached);
       rethrow;
     }
@@ -244,6 +252,7 @@ class CommerceRepository {
     int quantity = 1,
     List<String> optionItemIds = const <String>[],
   }) async {
+    final cache = await CustomerCache.capture(api);
     final r = await api.dio.post<Map<String, dynamic>>(
       '/api/v1/cart/items',
       data: {
@@ -254,31 +263,35 @@ class CommerceRepository {
         'optionItemIds': optionItemIds,
       },
     );
-    await OfflineCache.write('cart:last', r.data!);
+    await cache.write('cart:last', r.data!);
     return Cart.fromJson(r.data!);
   }
 
   Future<Cart> updateItem(String id, int quantity) async {
+    final cache = await CustomerCache.capture(api);
     final response = await api.dio.put<Map<String, dynamic>>(
         '/api/v1/cart/items/$id',
         data: {'quantity': quantity});
-    await OfflineCache.write('cart:last', response.data!);
+    await cache.write('cart:last', response.data!);
     return Cart.fromJson(response.data!);
   }
 
   Future<Cart> removeItem(String id) async {
+    final cache = await CustomerCache.capture(api);
     final response =
         await api.dio.delete<Map<String, dynamic>>('/api/v1/cart/items/$id');
-    await OfflineCache.write('cart:last', response.data!);
+    await cache.write('cart:last', response.data!);
     return Cart.fromJson(response.data!);
   }
 
   Future<void> clearCart() async {
+    final cache = await CustomerCache.capture(api);
     await api.dio.delete<void>('/api/v1/cart');
-    await OfflineCache.write('cart:last', emptyCartCache());
+    await cache.write('cart:last', emptyCartCache());
   }
 
   Future<Order> checkout(String addressId, double expectedDeliveryFee) async {
+    final cache = await CustomerCache.capture(api);
     final r = await api.dio.post<Map<String, dynamic>>(
       '/api/v1/orders',
       data: {
@@ -290,8 +303,7 @@ class CommerceRepository {
     final order = Order.fromJson(r.data!);
     // The backend changes the active cart to CHECKED_OUT. Keep the offline
     // fallback in sync so a later CART_NOT_FOUND cannot restore old items.
-    await OfflineCache.write(
-        'cart:last', emptyCartCache(currency: order.currency));
+    await cache.write('cart:last', emptyCartCache(currency: order.currency));
     return order;
   }
 
@@ -302,6 +314,26 @@ class CommerceRepository {
     return CoverageResult.fromJson(response.data!);
   }
 
+  Future<YapeSettings> yapeSettings(String merchantId) async {
+    final response = await api.dio.get<Map<String, dynamic>>(
+        '/api/v1/customer/checkout/merchants/$merchantId/yape');
+    return YapeSettings.fromJson(response.data!);
+  }
+
+  Future<void> payYape(String orderId, String version,
+      {String? idempotencyKey}) async {
+    await api.dio.post<Map<String, dynamic>>(
+      '/api/v1/orders/$orderId/payments',
+      data: {
+        'paymentMethod': 'YAPE',
+        'customerDeclared': true,
+        'yapeSettingsVersion': version
+      },
+      options: Options(
+          headers: {'Idempotency-Key': idempotencyKey ?? const Uuid().v4()}),
+    );
+  }
+
   Future<void> pay(String orderId, String method) async {
     await api.dio.post<Map<String, dynamic>>(
       '/api/v1/orders/$orderId/payments',
@@ -310,15 +342,23 @@ class CommerceRepository {
     );
   }
 
+  Future<Order> order(String id) async {
+    final response =
+        await api.dio.get<Map<String, dynamic>>('/api/v1/orders/$id');
+    return Order.fromJson(response.data!);
+  }
+
   Future<List<Order>> orders() async {
+    final cache = await CustomerCache.capture(api);
     try {
       final r = await api.dio.get<List<dynamic>>('/api/v1/orders');
-      await OfflineCache.write('orders:last', r.data!);
+      await cache.write('orders:last', r.data!);
       return r.data!
           .map((e) => Order.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (error) {
-      final cached = await OfflineCache.read('orders:last');
+      if (!CustomerCache.permitsFallback(error)) rethrow;
+      final cached = await cache.read('orders:last');
       if (cached is List<dynamic>)
         return cached
             .map((e) => Order.fromJson((e as Map).cast<String, dynamic>()))
@@ -328,13 +368,15 @@ class CommerceRepository {
   }
 
   Future<Map<String, dynamic>> tracking(String id) async {
+    final cache = await CustomerCache.capture(api);
     try {
       final r = await api.dio
           .get<Map<String, dynamic>>('/api/v1/orders/$id/tracking');
-      await OfflineCache.write('tracking:$id', r.data!);
+      await cache.write('tracking:$id', r.data!);
       return r.data!;
     } catch (error) {
-      final cached = await OfflineCache.read('tracking:$id');
+      if (!CustomerCache.permitsFallback(error)) rethrow;
+      final cached = await cache.read('tracking:$id');
       if (cached is Map<String, dynamic>) return cached;
       rethrow;
     }
@@ -350,16 +392,17 @@ class CommerceRepository {
   }
 
   Future<void> rate(String orderId, int score, String comment) async {
+    final cache = await CustomerCache.capture(api);
     await api.dio.post<void>('/api/v1/customer/orders/$orderId/rating',
         data: {'score': score, 'comment': comment});
-    final cached = await OfflineCache.read('orders:last');
+    final cached = await cache.read('orders:last');
     if (cached is List<dynamic>) {
       final updated = cached.map((item) {
         final order = Map<String, dynamic>.from(item as Map);
         if (order['id'] == orderId) order['ratingSubmitted'] = true;
         return order;
       }).toList();
-      await OfflineCache.write('orders:last', updated);
+      await cache.write('orders:last', updated);
     }
   }
 

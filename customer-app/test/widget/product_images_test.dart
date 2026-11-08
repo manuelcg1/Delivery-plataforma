@@ -80,7 +80,8 @@ void main() {
     expect(find.byType(AnimatedContainer), findsNWidgets(2));
   });
 
-  testWidgets('product detail exposes merchant, total and accessible quantity controls',
+  testWidgets(
+      'product detail exposes merchant, total and accessible quantity controls',
       (tester) async {
     await tester.pumpWidget(
       const ProviderScope(

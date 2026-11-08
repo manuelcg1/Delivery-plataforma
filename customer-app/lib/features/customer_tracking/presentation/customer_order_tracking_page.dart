@@ -8,7 +8,8 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/providers.dart';
-import '../../../core/offline/offline_cache.dart';
+import '../notifications/arrival_notification_provider.dart';
+import '../notifications/arrival_notice_coordinator.dart';
 import '../domain/tracking_location.dart';
 import '../domain/customer_tracking_response.dart';
 import 'customer_tracking_controller.dart';
@@ -31,30 +32,23 @@ class _CustomerOrderTrackingPageState
     extends ConsumerState<CustomerOrderTrackingPage>
     with WidgetsBindingObserver {
   final MapController _mapController = MapController();
-  final Set<String> _arrivalNoticesInProgress = <String>{};
+  late final ArrivalNoticeCoordinator _arrivalNotices;
+  late final Object _trackingNoticeKey;
   TrackingLocation? _displayed;
   TrackingLocation? _previous;
-
-  Future<void> _showArrivalOnce(String deliveryId) async {
-    if (!_arrivalNoticesInProgress.add(deliveryId)) return;
-    final key = 'arrivalShown:$deliveryId';
-    try {
-      if (await OfflineCache.read(key) == true || !mounted) return;
-      await OfflineCache.write(key, true);
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(arrivalSnackBar());
-    } finally {
-      _arrivalNoticesInProgress.remove(deliveryId);
-    }
-  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _arrivalNotices = ref.read(arrivalNoticeCoordinatorProvider);
+    _trackingNoticeKey = _arrivalNotices.watchTracking(widget.orderId,
+        isVisible: () =>
+            mounted && (ModalRoute.of(context)?.isCurrent ?? false),
+        show: () async {
+          if (mounted)
+            ScaffoldMessenger.of(context).showSnackBar(arrivalSnackBar());
+        });
   }
 
   @override
@@ -69,6 +63,7 @@ class _CustomerOrderTrackingPageState
 
   @override
   void dispose() {
+    _arrivalNotices.unwatchTracking(_trackingNoticeKey);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -77,9 +72,14 @@ class _CustomerOrderTrackingPageState
   Widget build(BuildContext context) {
     ref.listen<CustomerTrackingState>(
       customerOrderTrackingControllerProvider(widget.orderId),
-      (previous,next) {
-        if(next.arrivalNoticeId!=null && next.arrivalNoticeId!=previous?.arrivalNoticeId) {
-          unawaited(_showArrivalOnce(next.arrivalNoticeId!));
+      (previous, next) {
+        if (next.arrivalNoticeId != null &&
+            next.arrivalNoticeId != previous?.arrivalNoticeId) {
+          unawaited(_arrivalNotices.receive({
+            'type': arrivalEvent,
+            'orderId': widget.orderId,
+            'deliveryId': next.tracking?.deliveryId ?? next.arrivalNoticeId!,
+          }));
         }
       },
     );
@@ -135,11 +135,14 @@ class _CustomerOrderTrackingPageState
   }
 }
 
-SnackBar arrivalSnackBar() => const SnackBar(
+SnackBar arrivalSnackBar({VoidCallback? onOpen}) => SnackBar(
+      action: onOpen == null
+          ? null
+          : SnackBarAction(label: 'Ver pedido', onPressed: onOpen),
       behavior: SnackBarBehavior.floating,
       duration: Duration(seconds: 5),
       showCloseIcon: true,
-      content: Row(
+      content: const Row(
         children: [
           Icon(Icons.delivery_dining, color: Colors.white),
           SizedBox(width: 12),
@@ -242,47 +245,51 @@ class _TrackingMap extends StatelessWidget {
           MarkerLayer(markers: [
             Marker(
               point: LatLng(route!.originLatitude, route!.originLongitude),
-              child: const Icon(Icons.store, color: Color(0xFF7C3AED), size: 34),
+              child:
+                  const Icon(Icons.store, color: Color(0xFF7C3AED), size: 34),
             ),
             Marker(
-              point: LatLng(route!.destinationLatitude, route!.destinationLongitude),
+              point: LatLng(
+                  route!.destinationLatitude, route!.destinationLongitude),
               child: const Icon(Icons.home, color: Color(0xFFDC2626), size: 34),
             ),
           ]),
-        if (target != null) TweenAnimationBuilder<double>(
-          key: ValueKey(target.gpsTimestamp),
-          duration: animate ? const Duration(milliseconds: 800) : Duration.zero,
-          tween: Tween(begin: 0, end: 1),
-          builder: (_, value, __) {
-            final latitude = animate
-                ? from.latitude + (target.latitude - from.latitude) * value
-                : target.latitude;
-            final longitude = animate
-                ? from.longitude + (target.longitude - from.longitude) * value
-                : target.longitude;
-            return MarkerLayer(markers: [
-              Marker(
-                point: LatLng(latitude, longitude),
-                width: 52,
-                height: 52,
-                child: Transform.rotate(
-                  angle: (target.heading ?? 0) * math.pi / 180,
-                  child: const DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Color(0xFF2563EB),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(blurRadius: 8, color: Colors.black26)
-                      ],
+        if (target != null)
+          TweenAnimationBuilder<double>(
+            key: ValueKey(target.gpsTimestamp),
+            duration:
+                animate ? const Duration(milliseconds: 800) : Duration.zero,
+            tween: Tween(begin: 0, end: 1),
+            builder: (_, value, __) {
+              final latitude = animate
+                  ? from.latitude + (target.latitude - from.latitude) * value
+                  : target.latitude;
+              final longitude = animate
+                  ? from.longitude + (target.longitude - from.longitude) * value
+                  : target.longitude;
+              return MarkerLayer(markers: [
+                Marker(
+                  point: LatLng(latitude, longitude),
+                  width: 52,
+                  height: 52,
+                  child: Transform.rotate(
+                    angle: (target.heading ?? 0) * math.pi / 180,
+                    child: const DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Color(0xFF2563EB),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(blurRadius: 8, color: Colors.black26)
+                        ],
+                      ),
+                      child: Icon(Icons.delivery_dining,
+                          color: Colors.white, size: 30),
                     ),
-                    child: Icon(Icons.delivery_dining,
-                        color: Colors.white, size: 30),
                   ),
                 ),
-              ),
-            ]);
-          },
-        ),
+              ]);
+            },
+          ),
         RichAttributionWidget(
           attributions: const [
             TextSourceAttribution('OpenStreetMap contributors')
@@ -311,17 +318,29 @@ class CustomerTrackingStatusPanel extends StatelessWidget {
         ? (Icons.check_circle, Colors.green, 'Pedido entregado')
         : arrived
             ? (Icons.location_on, Colors.green, 'Tu repartidor llegó')
-        : !state.trackingActive
-            ? (
-                Icons.stop_circle_outlined,
-                Colors.grey,
-                'El seguimiento ha finalizado'
-              )
-            : state.stale
-                ? (Icons.schedule, Colors.orange, 'Ubicación desactualizada')
-                : state.reconnecting
-                    ? (Icons.sync, Colors.orange, 'Reconectando seguimiento…')
-                    : (Icons.wifi, Colors.green, 'Ubicación en tiempo real');
+            : !state.trackingActive
+                ? (
+                    Icons.stop_circle_outlined,
+                    Colors.grey,
+                    'El seguimiento ha finalizado'
+                  )
+                : state.stale
+                    ? (
+                        Icons.schedule,
+                        Colors.orange,
+                        'Ubicación desactualizada'
+                      )
+                    : state.reconnecting
+                        ? (
+                            Icons.sync,
+                            Colors.orange,
+                            'Reconectando seguimiento…'
+                          )
+                        : (
+                            Icons.wifi,
+                            Colors.green,
+                            'Ubicación en tiempo real'
+                          );
     return SafeArea(
       top: false,
       child: Padding(

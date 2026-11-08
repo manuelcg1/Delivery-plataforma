@@ -1,3 +1,5 @@
+import 'package:uuid/uuid.dart';
+import '../data/yape_recovery.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -11,6 +13,9 @@ import '../../home/data/customer_repository.dart';
 import '../../home/presentation/home_page.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../data/commerce_repository.dart';
+import '../data/yape_checkout.dart';
+import 'yape_checkout_sheet.dart';
+import 'order_detail_widgets.dart';
 import '../../customer_tracking/presentation/customer_order_tracking_page.dart';
 import '../../customer_tracking/presentation/customer_tracking_controller.dart';
 import '../../address/presentation/customer_address_form_page.dart';
@@ -1325,7 +1330,7 @@ class _CheckoutBottomBar extends StatelessWidget {
                             strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.lock_outline_rounded, size: 19),
-                label: Text(busy ? 'Confirmando…' : 'Crear pedido y pagar'),
+                label: Text(busy ? 'Confirmando…' : 'Crear pedido'),
               ),
             ),
           ]),
@@ -1339,18 +1344,60 @@ class CheckoutPage extends ConsumerStatefulWidget {
   ConsumerState<CheckoutPage> createState() => _CheckoutPageState();
 }
 
-class _CheckoutPageState extends ConsumerState<CheckoutPage> {
+class _CheckoutPageState extends ConsumerState<CheckoutPage>
+    with WidgetsBindingObserver {
+  YapeDeclaration? declaration;
+  int declarationEpoch = 0;
+  bool yapeSheetOpen = false;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed)
+      setState(() {
+        declaration = null;
+        if (!yapeSheetOpen) declarationEpoch++;
+      });
+  }
+
+  YapeCheckoutSnapshot? _snapshot(Cart? cart) {
+    if (cart == null ||
+        address == null ||
+        coverage?.covered != true ||
+        coverageAddress != address ||
+        coverageMerchant != cart.merchantId ||
+        coverage?.deliveryFee == null ||
+        checkingCoverage) return null;
+    return YapeCheckoutSnapshot(
+        merchantId: cart.merchantId,
+        addressId: address!,
+        total: _quotedTotal(cart, coverage),
+        deliveryFee: coverage!.deliveryFee!,
+        currency: cart.currency);
+  }
+
   String? address;
   String? coverageAddress;
   String? coverageMerchant;
   CoverageResult? coverage;
   bool checkingCoverage = false;
-  String method = 'CARD';
   String? errorMessage;
   bool busy = false;
   Future<void> _validateCoverage(String addressId) async {
     setState(() {
       checkingCoverage = true;
+      declaration = null;
+      declarationEpoch++;
       coverage = null;
       errorMessage = null;
     });
@@ -1391,16 +1438,80 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   }
 
   Future<void> _submitOrder() async {
+    final confirmed = declaration;
+    final initial = _snapshot(ref.read(cartProvider).valueOrNull);
+    if (busy ||
+        confirmed == null ||
+        initial == null ||
+        !confirmed.matches(initial, confirmed.version)) return;
+    final epoch = declarationEpoch;
     setState(() {
       busy = true;
       errorMessage = null;
     });
     Order? createdOrder;
+    YapeRecoveryStore? recoveryStore;
+    YapeRecoveryIntent? recoveryIntent;
     final repository = ref.read(commerceRepositoryProvider);
     try {
+      final currentCart = await repository.cart();
+      final currentCoverage =
+          await repository.coverage(currentCart.merchantId, initial.addressId);
+      final settings = await repository.yapeSettings(currentCart.merchantId);
+      final current = YapeCheckoutSnapshot(
+          merchantId: currentCart.merchantId,
+          addressId: initial.addressId,
+          total: _quotedTotal(currentCart, currentCoverage),
+          deliveryFee: currentCoverage.deliveryFee ?? -1,
+          currency: currentCart.currency);
+      if (!mounted) return;
+      if (epoch != declarationEpoch ||
+          address != initial.addressId ||
+          !currentCoverage.covered ||
+          !settings.available ||
+          !confirmed.matches(current, settings.version)) {
+        ref.invalidate(cartProvider);
+        setState(() {
+          declaration = null;
+          coverage = currentCoverage;
+          coverageMerchant = currentCart.merchantId;
+          coverageAddress = initial.addressId;
+          errorMessage =
+              'Los datos del pedido o de Yape cambiaron. Revisa el total y confirma tu Yape nuevamente.';
+        });
+        return;
+      }
+      final scope = await repository.api.store.identityScope();
+      if (scope != null) {
+        final parts = scope.split('/');
+        recoveryStore = YapeRecoveryStore(parts[0], parts[1],
+            origin: repository.api.dio.options.baseUrl);
+        if (await recoveryStore.read() != null) {
+          if (mounted) {
+            ref.read(customerMainTabProvider.notifier).state =
+                customerOrdersTabIndex;
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          }
+          return;
+        }
+        recoveryIntent = YapeRecoveryIntent(
+            snapshot: current,
+            version: confirmed.version,
+            checkoutKey: const Uuid().v4(),
+            paymentKey: const Uuid().v4());
+        await recoveryStore.save(recoveryIntent);
+      }
       createdOrder =
-          await repository.checkout(address!, coverage!.deliveryFee!);
-      await repository.pay(createdOrder.id, method);
+          await repository.checkout(initial.addressId, current.deliveryFee);
+      if (recoveryIntent != null) {
+        recoveryIntent = recoveryIntent.withOrder(createdOrder.id);
+        await recoveryStore!.save(recoveryIntent);
+        await repository.payYape(createdOrder.id, confirmed.version,
+            idempotencyKey: recoveryIntent.paymentKey);
+        await recoveryStore.clear();
+      } else {
+        await repository.payYape(createdOrder.id, confirmed.version);
+      }
       ref.invalidate(cartProvider);
       ref.invalidate(ordersProvider);
       if (mounted) {
@@ -1426,7 +1537,25 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           Navigator.of(context).popUntil((route) => route.isFirst);
         }
       } else if (mounted) {
-        if (repository.errorCode(error) == 'DELIVERY_QUOTE_CHANGED') {
+        if (recoveryStore != null && recoveryIntent != null) {
+          final code = repository.errorCode(error);
+          if (const {
+            'OUTSIDE_BUSINESS_HOURS',
+            'EMPTY_CART',
+            'DELIVERY_QUOTE_CHANGED',
+            'PRICE_CHANGED',
+            'CART_NOT_FOUND'
+          }.contains(code)) {
+            await recoveryStore.clear();
+          }
+        }
+        if (repository.errorCode(error) == 'OUTSIDE_BUSINESS_HOURS') {
+          setState(() {
+            declaration = null;
+            declarationEpoch++;
+            errorMessage = 'Fuera de horario de atención';
+          });
+        } else if (repository.errorCode(error) == 'DELIVERY_QUOTE_CHANGED') {
           await _validateCoverage(address!);
           if (mounted) {
             setState(() => errorMessage =
@@ -1442,42 +1571,85 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
   }
 
   Future<void> _showPaymentMethods() async {
-    final selected = await showModalBottomSheet<String>(
+    final snapshot = _snapshot(ref.read(cartProvider).valueOrNull);
+    if (busy || snapshot == null) return;
+    if (snapshot.currency != 'PEN') {
+      setState(() =>
+          errorMessage = 'Yape solo está disponible para pedidos en soles.');
+      return;
+    }
+    final epoch = ++declarationEpoch;
+    setState(() {
+      declaration = null;
+      errorMessage = null;
+      busy = true;
+    });
+    try {
+      final repository = ref.read(commerceRepositoryProvider);
+      final scope = await repository.api.store.identityScope();
+      if (scope != null) {
+        final parts = scope.split('/');
+        final pending = await YapeRecoveryStore(parts[0], parts[1],
+                origin: repository.api.dio.options.baseUrl)
+            .read();
+        if (!mounted || epoch != declarationEpoch) return;
+        if (pending != null) {
+          setState(() => errorMessage =
+              'Tienes una declaración pendiente en Pedidos. Revísala antes de realizar otro Yape.');
+          return;
+        }
+      }
+      final cart = ref.read(cartProvider).valueOrNull;
+      if (cart == null) return;
+      final availability = await ref
+          .read(customerRepositoryProvider)
+          .availability(cart.branchId);
+      if (!mounted || epoch != declarationEpoch) return;
+      if (!availability.open) {
+        setState(() => errorMessage = 'Fuera de horario de atención');
+        return;
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => errorMessage =
+            'No pudimos verificar la disponibilidad. Intenta nuevamente.');
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+    if (!mounted || epoch != declarationEpoch) return;
+    final checkedCart = ref.read(cartProvider).valueOrNull;
+    final checked = _snapshot(checkedCart);
+    if (checkedCart == null || checked == null || !snapshot.sameAs(checked))
+      return;
+    yapeSheetOpen = true;
+    final settings = await showModalBottomSheet<YapeSettings>(
       context: context,
       useSafeArea: true,
       showDragHandle: true,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('Método de pago',
-                style: TextStyle(
-                    color: _navy, fontSize: 20, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            ...checkoutPaymentMethods.entries.map(
-              (entry) => ListTile(
-                minTileHeight: 56,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  entry.key == method
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_off,
-                  color: entry.key == method ? _orange : _secondaryText,
-                ),
-                title: Text(entry.value),
-                onTap: () => Navigator.pop(context, entry.key),
-              ),
-            ),
-          ],
-        ),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => YapeCheckoutSheet(
+          total: snapshot.total,
+          load: () async {
+            final availability = await ref
+                .read(customerRepositoryProvider)
+                .availability(checkedCart.branchId);
+            if (!availability.open) {
+              throw const BranchClosedForYape();
+            }
+            return ref
+                .read(commerceRepositoryProvider)
+                .yapeSettings(snapshot.merchantId);
+          }),
     );
-    if (selected != null && mounted) setState(() => method = selected);
+    yapeSheetOpen = false;
+    if (!mounted || settings == null || epoch != declarationEpoch) return;
+    final current = _snapshot(ref.read(cartProvider).valueOrNull);
+    if (current == null || !snapshot.sameAs(current)) return;
+    setState(() => declaration = YapeDeclaration(snapshot, settings.version!));
   }
 
   Future<void> _selectAddress(List<CustomerAddress> items) async {
@@ -1507,10 +1679,11 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
     final addresses = ref.watch(addressesProvider);
     final cart = ref.watch(cartProvider).valueOrNull;
     final activeMerchant = cart?.merchantId;
-    final canSubmit = !busy &&
-        address != null &&
-        !checkingCoverage &&
-        coverage?.covered == true;
+    final snapshot = _snapshot(cart);
+    final declared = snapshot != null &&
+        declaration?.matches(snapshot, declaration?.version) == true;
+    if (declaration != null && !declared) declaration = null;
+    final canSubmit = !busy && declared;
     return Scaffold(
       backgroundColor: _surface,
       appBar: AppBar(
@@ -1582,33 +1755,9 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
           const SizedBox(height: 20),
           const _SectionTitle('Método de pago'),
           const SizedBox(height: 10),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 240),
-            transitionBuilder: _fadeSlide,
-            child: Semantics(
-              key: ValueKey(method),
-              button: true,
-              label: 'Método de pago, ${checkoutPaymentMethods[method]}',
-              child: InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: _showPaymentMethods,
-                child: _CheckoutCard(
-                  child: Row(children: [
-                    const _CheckoutIcon(icon: Icons.credit_card_rounded),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(checkoutPaymentMethods[method]!,
-                          style: const TextStyle(
-                              color: _primaryText,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                    const Icon(Icons.chevron_right_rounded, color: _orange),
-                  ]),
-                ),
-              ),
-            ),
-          ),
+          YapeCheckoutCard(
+              declared: declared,
+              onTap: !busy && snapshot != null ? _showPaymentMethods : null),
           const SizedBox(height: 20),
           const _SectionTitle('Resumen del pedido'),
           const SizedBox(height: 10),
@@ -1636,6 +1785,154 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage> {
       ),
     );
   }
+}
+
+class _YapeRecoveryPanel extends ConsumerWidget {
+  const _YapeRecoveryPanel();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authControllerProvider).valueOrNull;
+    if (user == null) return const SizedBox.shrink();
+    final origin = ref.watch(apiClientProvider).dio.options.baseUrl;
+    return ConstrainedBox(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .35),
+        child: SingleChildScrollView(
+            child: _YapeRecoveryAction(
+          key: ValueKey('$origin/${user.tenantId}/${user.id}'),
+          store: YapeRecoveryStore(user.tenantId, user.id, origin: origin),
+          revision: ref.watch(ordersProvider),
+        )));
+  }
+}
+
+class _YapeRecoveryAction extends ConsumerStatefulWidget {
+  const _YapeRecoveryAction(
+      {super.key, required this.store, required this.revision});
+  final YapeRecoveryStore store;
+  final Object revision;
+  @override
+  ConsumerState<_YapeRecoveryAction> createState() =>
+      _YapeRecoveryActionState();
+}
+
+class _YapeRecoveryActionState extends ConsumerState<_YapeRecoveryAction> {
+  late Future<YapeRecoveryIntent?> pending;
+  bool busy = false;
+  String? error;
+  @override
+  void initState() {
+    super.initState();
+    pending = widget.store.read();
+  }
+
+  @override
+  void didUpdateWidget(covariant _YapeRecoveryAction oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!busy && oldWidget.revision != widget.revision)
+      pending = widget.store.read();
+  }
+
+  Future<void> retry() async {
+    if (busy) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      await YapeRecoveryService(widget.store).resume(
+        createOrder: (_) async =>
+            throw StateError('No se repite la creación del pedido.'),
+        declare: (intent) => ref.read(commerceRepositoryProvider).payYape(
+            intent.orderId!, intent.version,
+            idempotencyKey: intent.paymentKey),
+      );
+      if (!mounted) return;
+      ref.invalidate(ordersProvider);
+      setState(() => pending = widget.store.read());
+    } catch (_) {
+      if (mounted)
+        setState(() => error =
+            'No pudimos registrar la declaración. No repitas el Yape. Si cambiaron los datos de pago, solicita al comercio revisar tu transferencia.');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> acknowledge() async {
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Revisión con el comercio'),
+              content: const Text(
+                  '¿El comercio ya revisó esta transferencia y el pedido? Cerrar este aviso no confirma ni modifica el pago.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Volver')),
+                TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Sí, ya lo revisó'))
+              ],
+            ));
+    if (confirmed != true || !mounted) return;
+    setState(() => busy = true);
+    try {
+      await widget.store.clear();
+      if (mounted) setState(() => pending = widget.store.read());
+    } catch (_) {
+      if (mounted)
+        setState(
+            () => error = 'No se pudo cerrar el aviso. Intenta nuevamente.');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<YapeRecoveryIntent?>(
+      future: pending,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done)
+          return const SizedBox.shrink();
+        if (snapshot.hasError)
+          return Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(children: [
+                const Text('No se pudo consultar la declaración pendiente.'),
+                TextButton(
+                    onPressed: () =>
+                        setState(() => pending = widget.store.read()),
+                    child: const Text('Reintentar'))
+              ]));
+        final intent = snapshot.data;
+        if (intent == null) return const SizedBox.shrink();
+        return Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Declaración Yape pendiente',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  Text(intent.orderId == null
+                      ? 'La conexión se interrumpió al crear el pedido. Revisa tus pedidos y consulta al comercio. No crees otro pedido ni repitas el Yape para esta transferencia.'
+                      : 'Tu pedido existe. Reintenta registrar la declaración de la transferencia realizada, sin volver a pagar.'),
+                  if (error != null)
+                    Text(error!, style: const TextStyle(color: Colors.red)),
+                  Wrap(spacing: 10, children: [
+                    if (intent.orderId != null)
+                      FilledButton(
+                          onPressed: busy ? null : retry,
+                          child: Text(busy
+                              ? 'Registrando…'
+                              : 'Reintentar declaración')),
+                    TextButton(
+                        onPressed: busy ? null : acknowledge,
+                        child: const Text('Ya lo revisé con el comercio')),
+                  ]),
+                ]));
+      });
 }
 
 class OrdersPage extends ConsumerStatefulWidget {
@@ -1680,56 +1977,65 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
   @override
   Widget build(BuildContext context) => ColoredBox(
         color: const Color(0xFFF8FAFC),
-        child: ref.watch(ordersProvider).when(
-              data: (orders) {
-                if (orders.isEmpty) {
-                  return const EmptyState(
-                    title: 'Sin pedidos',
-                    message:
-                        'Tus pedidos activos e históricos aparecerán aquí.',
-                  );
-                }
-                return LayoutBuilder(builder: (context, constraints) {
-                  final horizontal = constraints.maxWidth >= 700 ? 32.0 : 16.0;
-                  return _OrderListEntrance(
-                    child: ListView.separated(
-                      padding:
-                          EdgeInsets.fromLTRB(horizontal, 20, horizontal, 32),
-                      itemCount: orders.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 18),
-                      itemBuilder: (context, index) {
-                        final order = orders[index];
-                        return OrderCard(
-                          order: order,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => OrderDetailPage(order: order),
-                            ),
-                          ),
-                          onTrack: trackableDeliveryStatuses
-                                  .contains(order.status)
-                              ? () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => CustomerOrderTrackingPage(
-                                        orderId: order.id,
-                                        orderNumber: order.number,
-                                      ),
-                                    ),
-                                  )
-                              : null,
+        child: Column(children: [
+          const _YapeRecoveryPanel(),
+          Expanded(
+              child: ref.watch(ordersProvider).when(
+                    data: (orders) {
+                      if (orders.isEmpty) {
+                        return const EmptyState(
+                          title: 'Sin pedidos',
+                          message:
+                              'Tus pedidos activos e históricos aparecerán aquí.',
                         );
-                      },
+                      }
+                      return LayoutBuilder(builder: (context, constraints) {
+                        final horizontal =
+                            constraints.maxWidth >= 700 ? 32.0 : 16.0;
+                        return _OrderListEntrance(
+                          child: ListView.separated(
+                            padding: EdgeInsets.fromLTRB(
+                                horizontal, 20, horizontal, 32),
+                            itemCount: orders.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 18),
+                            itemBuilder: (context, index) {
+                              final order = orders[index];
+                              return OrderCard(
+                                order: order,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        OrderDetailPage(order: order),
+                                  ),
+                                ),
+                                onTrack: trackableDeliveryStatuses
+                                        .contains(order.status)
+                                    ? () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                CustomerOrderTrackingPage(
+                                              orderId: order.id,
+                                              orderNumber: order.number,
+                                            ),
+                                          ),
+                                        )
+                                    : null,
+                              );
+                            },
+                          ),
+                        );
+                      });
+                    },
+                    loading: () => const Center(
+                      child:
+                          CircularProgressIndicator(color: Color(0xFFFF7C00)),
                     ),
-                  );
-                });
-              },
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: Color(0xFFFF7C00)),
-              ),
-              error: (error, _) => ErrorState(message: error.toString()),
-            ),
+                    error: (error, _) => ErrorState(message: error.toString()),
+                  )),
+        ]),
       );
 }
 
@@ -1991,7 +2297,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
             .firstOrNull ??
         widget.order;
     return Scaffold(
-        appBar: AppBar(title: Text(order.number)),
+        appBar: AppBar(title: const Text('Detalle del pedido')),
         body: FutureBuilder<Map<String, dynamic>>(
           future: tracking,
           builder: (context, snapshot) {
@@ -2000,20 +2306,21 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                 snapshot.data?['status']?.toString() ??
                 order.status;
             return ListView(padding: const EdgeInsets.all(20), children: [
-              Text('Estado: ${_deliveryStatusLabel(currentStatus)}',
-                  style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 12),
-              Text(
-                  'Total: ${order.currency} ${order.total.toStringAsFixed(2)}'),
-              const SizedBox(height: 24),
-              Card(
-                  child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: snapshot.connectionState != ConnectionState.done
-                          ? const LinearProgressIndicator()
-                          : Text(snapshot.hasError
-                              ? 'El tracking estará disponible cuando exista una entrega.'
-                              : 'Seguimiento actualizado. Repartidor: ${snapshot.data?['courierName'] ?? 'por asignar'}'))),
+              OrderDetailSummary(
+                number: order.number,
+                statusLabel: _deliveryStatusLabel(currentStatus),
+                currency: order.currency,
+                total: order.total,
+              ),
+              const SizedBox(height: 16),
+              if (snapshot.connectionState != ConnectionState.done)
+                const LinearProgressIndicator()
+              else if (snapshot.hasError)
+                const Card(
+                    child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text(
+                            'El tracking estará disponible cuando exista una entrega.'))),
               if (deliveryId != null &&
                   !terminalDeliveryStatuses.contains(currentStatus))
                 RealtimeStatusBanner(
@@ -2025,6 +2332,12 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                   deliveryId: deliveryId,
                   currentStatus: currentStatus,
                 ),
+              if (snapshot.connectionState == ConnectionState.done &&
+                  !snapshot.hasError)
+                OrderCourierInfo(
+                    name: snapshot.data?['courierName']?.toString() ??
+                        'Por asignar'),
+              const SizedBox(height: 12),
               if (trackableDeliveryStatuses.contains(currentStatus))
                 FilledButton.icon(
                   onPressed: () => Navigator.push(
@@ -2039,15 +2352,13 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                   icon: const Icon(Icons.map_outlined),
                   label: const Text('Seguir pedido'),
                 ),
-              if (deliveryId != null &&
-                  !terminalDeliveryStatuses.contains(currentStatus))
-                FilledButton.tonalIcon(
-                    onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute<void>(
-                            builder: (_) => ChatPage(deliveryId: deliveryId))),
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    label: const Text('Chatear con el repartidor')),
+              OrderCourierChatButton(
+                  status: currentStatus,
+                  deliveryId: deliveryId,
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                          builder: (_) => ChatPage(deliveryId: deliveryId!)))),
               if (canRateOrder(order, currentStatus: currentStatus) &&
                   !ratingSubmitted)
                 FilledButton.icon(
@@ -2091,13 +2402,15 @@ class RealtimeStatusBanner extends ConsumerStatefulWidget {
 class _RealtimeStatusBannerState extends ConsumerState<RealtimeStatusBanner> {
   String status = 'Conectando seguimiento…';
   StreamSubscription<RealtimeEvent>? subscription;
+  late final RealtimeClient client;
   @override
   void initState() {
     super.initState();
+    client = ref.read(realtimeClientProvider);
     Future.microtask(() async {
+      if (!mounted) return;
       final user = ref.read(authControllerProvider).value;
       if (user == null) return;
-      final client = ref.read(realtimeClientProvider);
       subscription = client.events.listen((event) {
         if (mounted) {
           setState(() => status = _label(event.type, event.payload));
@@ -2116,7 +2429,7 @@ class _RealtimeStatusBannerState extends ConsumerState<RealtimeStatusBanner> {
   @override
   void dispose() {
     subscription?.cancel();
-    ref.read(realtimeClientProvider).disconnect();
+    client.disconnect();
     super.dispose();
   }
 
@@ -2161,8 +2474,20 @@ class _CustomerDeliveryTimeline extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Línea de tiempo',
-                  style: Theme.of(context).textTheme.titleMedium),
+              Row(children: [
+                Icon(Icons.timeline,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Text('Seguimiento de tu pedido',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700))),
+              ]),
+              const SizedBox(height: 4),
+              Text('Historial de actualizaciones',
+                  style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 12),
               FutureBuilder<List<DeliveryStatusEvent>>(
                 future: ref
@@ -2185,17 +2510,14 @@ class _CustomerDeliveryTimeline extends ConsumerWidget {
                     );
                   }
                   return Column(
-                    children: events
-                        .map((event) => ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: const CircleAvatar(
-                                radius: 14,
-                                child: Icon(Icons.check, size: 16),
-                              ),
-                              title: Text(_deliveryStatusLabel(event.status)),
-                              subtitle: Text(_orderDate(event.createdAt)),
-                            ))
-                        .toList(),
+                    children: [
+                      for (var i = 0; i < events.length; i++)
+                        OrderTimelineEntry(
+                          title: _deliveryStatusLabel(events[i].status),
+                          date: _orderDate(events[i].createdAt),
+                          last: i == events.length - 1,
+                        )
+                    ],
                   );
                 },
               ),
@@ -2212,6 +2534,7 @@ String _deliveryStatusLabel(String status) =>
       'ACCEPTED': 'Pedido aceptado',
       'PICKED_UP': 'Pedido recogido',
       'IN_TRANSIT': 'En camino',
+      'ARRIVED_AT_CUSTOMER': 'Tu repartidor llegó',
       'DELIVERED': 'Entregado',
       'CANCELLED': 'Cancelado',
     }[status] ??

@@ -30,37 +30,63 @@ class SessionUser {
       );
 }
 
+class MobileRegistrationResult {
+  const MobileRegistrationResult({this.user, this.message});
+  final SessionUser? user;
+  final String? message;
+  bool get pendingApproval => user == null;
+}
+
 class AuthRepository {
   AuthRepository(this.api, this.store);
   final ApiClient api;
   final SessionStore store;
   Future<SessionUser> login({
-    required String tenantCode,
+    String tenantCode = '',
     required String email,
     required String password,
   }) =>
       _session('/api/v1/auth/login-mobile', {
-        'tenantCode': tenantCode,
         'email': email,
         'password': password,
       });
-  Future<SessionUser> register({
-    required String tenantCode,
+  Future<MobileRegistrationResult> register({
+    String tenantCode = '',
     required String firstName,
     required String lastName,
     required String email,
     required String password,
-  }) =>
-      _session('/api/v1/auth/register-customer', {
-        'tenantCode': tenantCode,
-        'firstName': firstName,
-        'lastName': lastName,
-        'email': email,
-        'password': password,
-      });
+    required String phone,
+    String profile = 'CUSTOMER',
+  }) async {
+    try {
+      final response = await api.dio.post<Map<String, dynamic>>(
+        '/api/v1/auth/register-mobile',
+        data: {
+          'firstName': firstName,
+          'lastName': lastName,
+          'email': email,
+          'password': password,
+          'phone': phone,
+          'profile': profile,
+        },
+      );
+      final json = response.data!;
+      if (json['pendingApproval'] == true) {
+        return MobileRegistrationResult(
+          message: json['message'] as String? ??
+              'Tu cuenta de repartidor está pendiente de activación por el administrador.',
+        );
+      }
+      return MobileRegistrationResult(user: await _save(json));
+    } catch (error) {
+      throw api.exception(error);
+    }
+  }
+
   Future<SessionUser> restore() async {
     await api.ensureValidSession();
-    final response=await api.dio.get<Map<String,dynamic>>('/api/v1/auth/me');
+    final response = await api.dio.get<Map<String, dynamic>>('/api/v1/auth/me');
     return SessionUser.fromJson(response.data!);
   }
 

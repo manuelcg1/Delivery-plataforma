@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -21,6 +22,18 @@ public class MerchantMediaController {
 
     public MerchantMediaController(MerchantMediaService service) {
         this.service = service;
+    }
+
+    @GetMapping("/logo")
+    @PreAuthorize("hasAuthority('CATALOG_MERCHANTS_VIEW')")
+    MerchantImage logo(@AuthenticationPrincipal IdentityPrincipal principal, @PathVariable UUID merchantId) {
+        return service.read(principal, merchantId, Type.LOGO);
+    }
+
+    @GetMapping("/banner")
+    @PreAuthorize("hasAuthority('CATALOG_MERCHANTS_VIEW')")
+    MerchantImage banner(@AuthenticationPrincipal IdentityPrincipal principal, @PathVariable UUID merchantId) {
+        return service.read(principal, merchantId, Type.BANNER);
     }
 
     @PostMapping(value = "/logo", consumes = "multipart/form-data")

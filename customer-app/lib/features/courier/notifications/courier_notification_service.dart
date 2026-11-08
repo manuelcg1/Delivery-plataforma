@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -11,6 +10,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/notifications/push_notification_service.dart';
+import '../../customer_tracking/notifications/arrival_notice_coordinator.dart';
+import '../../customer_tracking/notifications/customer_arrival_notification_service.dart';
 import '../../../core/auth/session_store.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/realtime/realtime_client.dart';
@@ -18,12 +20,17 @@ import '../data/courier_repository.dart';
 
 const assignmentEvent = 'NEW_DELIVERY_ASSIGNMENT';
 const assignmentChannel = 'CERKA_NEW_DELIVERY';
-const arrivalEvent = 'COURIER_ARRIVED';
-const arrivalChannel = 'CERKA_ORDER_ARRIVAL';
 
 @pragma('vm:entry-point')
 Future<void> courierFirebaseBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
+  if (message.data['type'] == arrivalEvent) {
+    // FCM notification payloads already have a system notification in background.
+    if (message.notification == null) {
+      await CustomerArrivalNotificationService.showBackground(message.data);
+    }
+    return;
+  }
   await CourierNotificationService.showBackground(message.data);
 }
 
@@ -52,8 +59,8 @@ class CourierNotificationService {
   final Future<void> Function(String deliveryId)? onOpenDelivery;
   final local = FlutterLocalNotificationsPlugin();
   final handled = <String>{};
-  StreamSubscription<RemoteMessage>? messages;
-  StreamSubscription<String>? tokenChanges;
+  late final PushNotificationService _push = PushNotificationService(api);
+  bool _disposed = false;
 
   static const channel = AndroidNotificationChannel(
     assignmentChannel,
@@ -64,12 +71,6 @@ class CourierNotificationService {
     enableVibration: true,
     showBadge: true,
   );
-  static const arrivalNotificationChannel = AndroidNotificationChannel(
-    arrivalChannel, 'Llegada del pedido',
-    description: 'Avisos cuando el repartidor llega al destino',
-    importance: Importance.max, playSound: true, enableVibration: true,
-  );
-
   Future<void> initialize() async {
     await local.initialize(
       const InitializationSettings(
@@ -84,8 +85,6 @@ class CourierNotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
-    await local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(arrivalNotificationChannel);
     await local
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
@@ -95,29 +94,14 @@ class CourierNotificationService {
         launch?.notificationResponse != null) {
       await _action(launch!.notificationResponse!);
     }
-    try {
-      await Firebase.initializeApp();
-      await FirebaseMessaging.instance.requestPermission(
-          alert: true, badge: true, sound: true, provisional: false);
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) await _register(token);
-      tokenChanges =
-          FirebaseMessaging.instance.onTokenRefresh.listen(_register);
-      messages = FirebaseMessaging.onMessage.listen((m) {
-        // Arrival is rendered by the private STOMP event while foregrounded,
-        // preventing a push and a SnackBar for the same domain event.
-        if(m.data['type']!=arrivalEvent) receive(m.data);
-      });
-      final initial = await FirebaseMessaging.instance.getInitialMessage();
-      if (initial != null) {
-        if(initial.data['type']==arrivalEvent) {
-          final id=initial.data['deliveryId']?.toString();
-          if(id!=null) await onOpenDelivery?.call(id);
-        } else await receive(initial.data);
-      }
-    } catch (_) {
-      // Builds without Firebase app files remain usable through WebSocket.
-    }
+    if (_disposed) return;
+    await _push.initialize(
+        onMessage: receive,
+        onOpened: (data) async {
+          final id = data['deliveryId']?.toString();
+          if (id != null) await onOpenDelivery?.call(id);
+        });
+    if (_disposed) return;
     await reconcile();
   }
 
@@ -134,19 +118,6 @@ class CourierNotificationService {
   Future<void> receive(Map<String, dynamic> data) async {
     final deliveryId = data['deliveryId']?.toString();
     if (deliveryId == null) return;
-    if(data['type']==arrivalEvent) {
-      final eventId=data['eventId']?.toString() ?? '$arrivalEvent:$deliveryId';
-      if(!handled.add(eventId)) return;
-      await local.show(notificationId(deliveryId),'¡Llegó tu pedido!',
-        'Tu repartidor ya se encuentra en el punto de entrega.',
-        const NotificationDetails(android: AndroidNotificationDetails(
-          arrivalChannel,'Llegada del pedido',importance: Importance.max,
-          priority: Priority.high,visibility: NotificationVisibility.public,
-          enableVibration:true,playSound:true),
-          iOS: DarwinNotificationDetails(presentAlert:true,presentSound:true)),
-        payload: jsonEncode({'deliveryId':deliveryId,'orderId':data['orderId'],'route':data['route']}));
-      return;
-    }
     if (data['type'] != assignmentEvent) return;
     final eventId =
         data['eventId']?.toString() ?? '$assignmentEvent:$deliveryId';
@@ -229,27 +200,9 @@ class CourierNotificationService {
     }
   }
 
-  Future<void> _register(String token) => api.dio.post<void>(
-      '/api/v1/device-tokens',
-      data: {'token': token, 'platform': Platform.isIOS ? 'IOS' : 'ANDROID'});
-  static Future<void> unregisterCurrent(ApiClient api) async {
-    try {
-      await Firebase.initializeApp();
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) {
-        await api.dio.delete<void>('/api/v1/device-tokens', data: {
-          'token': token,
-          'platform': Platform.isIOS ? 'IOS' : 'ANDROID',
-        });
-      }
-    } catch (error) {
-      debugPrint('No se pudo desactivar el token FCM al cerrar sesión: $error');
-    }
-  }
-
   Future<void> dispose() async {
-    await messages?.cancel();
-    await tokenChanges?.cancel();
+    _disposed = true;
+    await _push.dispose();
   }
 
   static int notificationId(String value) =>
@@ -263,17 +216,6 @@ class CourierNotificationService {
         iOS: DarwinInitializationSettings()));
     final deliveryId = data['deliveryId']?.toString();
     if (deliveryId == null) return;
-    if(data['type']==arrivalEvent) {
-      await plugin.show(notificationId(deliveryId),'¡Llegó tu pedido!',
-        'Tu repartidor ya se encuentra en el punto de entrega.',
-        const NotificationDetails(android: AndroidNotificationDetails(
-          arrivalChannel,'Llegada del pedido',importance: Importance.max,
-          priority: Priority.high,visibility: NotificationVisibility.public,
-          enableVibration:true,playSound:true),
-          iOS: DarwinNotificationDetails(presentAlert:true,presentSound:true)),
-        payload: jsonEncode({'deliveryId':deliveryId,'orderId':data['orderId'],'route':data['route']}));
-      return;
-    }
     if (data['type'] != assignmentEvent) return;
     final merchant = data['merchantName']?.toString() ?? 'Comercio';
     final body =

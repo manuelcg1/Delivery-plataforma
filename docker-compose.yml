@@ -73,6 +73,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      MOBILE_TENANT_CODE: ${MOBILE_TENANT_CODE:-}
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-delivery}
       DB_USERNAME: ${POSTGRES_USER:-delivery}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-delivery_dev_password}

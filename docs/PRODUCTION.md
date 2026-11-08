@@ -19,6 +19,12 @@ Complete todos los valores vacíos. `JWT_SECRET` debe tener al menos 48 caracter
 `PAYMENT_WEBHOOK_SECRET` al menos 32. Los dominios deben compartir el mismo dominio
 registrable para que la cookie HttpOnly funcione como same-site.
 
+`FIREBASE_SERVICE_ACCOUNT_FILE` debe apuntar al archivo de cuenta de servicio
+existente en el servidor, fuera del repositorio. Compose lo monta como solo
+lectura. Configure también `GOOGLE_MAPS_API_KEY`; ambos valores son obligatorios
+en el Compose productivo. `config --quiet` valida la configuración, pero no
+comprueba que el archivo Firebase exista ni que sus credenciales sean válidas.
+
 Genere secretos, por ejemplo:
 
 ```bash
@@ -53,8 +59,22 @@ Inicie sesión, cambie inmediatamente la contraseña y cambie
 `PLATFORM_OWNER_BOOTSTRAP_ENABLED=false`. A continuación, vuelva a aplicar la
 configuración.
 
-El modo productivo es `CASH_ONLY`. Los pagos electrónicos se rechazan de forma
-explícita hasta implementar y probar una pasarela real.
+El Compose productivo utiliza `MANUAL_YAPE`, coherente con el checkout actual del
+APK. Yape registra una declaración pendiente de revisión, nunca un cobro confirmado
+por el simulador. Efectivo sigue permitido por el backend; tarjeta y billeteras
+simuladas permanecen deshabilitadas. No cambie a `SIMULATED` en producción.
+
+Configure `MOBILE_TENANT_CODE` con el código real de la empresa del administrador;
+el backend lo utiliza para el registro y acceso del APK sin pedir empresa al cliente.
+El valor de ejemplo `your-tenant-code` debe reemplazarse. Verifique que la empresa
+exista y esté activa en el servidor. El Compose exige esta variable.
+
+Antes de aceptar pedidos Yape, configure QR, número y titular de cada comercio.
+Compruebe la declaración pendiente y su revisión con una transferencia controlada.
+Una interrupción después de crear el pedido puede recuperarse desde Pedidos con
+la misma clave de declaración. Si se perdió la respuesta de creación y no se conoce
+el pedido, no se repite automáticamente la creación ni la transferencia: revise los
+pedidos y concilie con el comercio. Cerrar el aviso local no confirma un pago.
 
 ## Backup
 
@@ -72,6 +92,12 @@ un ambiente aislado. No ejecute una restauración directamente sobre producción
 ## Actualización y rollback
 
 Antes de actualizar:
+
+Para la versión que incorpora V32–V34, consulte también
+[el ensayo de respaldo, restauración y migración](V34_RELEASE_VALIDATION.md).
+V34 añade columnas obligatorias: coordine el retiro de las réplicas antiguas
+antes de aceptar escrituras con el nuevo esquema. Volver únicamente al binario
+anterior no constituye un rollback compatible con esta migración.
 
 1. Cree y verifique un backup.
 2. Ejecute toda la CI.
@@ -98,5 +124,5 @@ restaure el backup cuando una migración no sea compatible hacia atrás.
 - No hay puertos 5432, 6379, 9000 ni 9001 expuestos públicamente.
 - Inicio de sesión, refresh, cierre de sesión y cambio de contraseña funcionan.
 - Se verifica aislamiento usando usuarios de dos tenants distintos.
-- Se prueba un pedido completo con pago contra entrega.
+- Se prueba un pedido completo con declaración Yape pendiente y revisión manual del comercio, incluida la recuperación de una declaración interrumpida sin repetir la transferencia.
 - Alertas, espacio en disco, expiración TLS y backups están monitorizados.

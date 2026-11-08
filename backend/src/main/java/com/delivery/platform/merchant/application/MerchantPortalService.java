@@ -39,11 +39,11 @@ public class MerchantPortalService {
     public record Merchant(UUID id, String name, String role, List<Branch> branches) {}
     public record Context(UUID userId, UUID tenantId, List<Merchant> merchants) {}
     public record OrderRow(UUID id, String orderNumber, UUID merchantId, UUID branchId, String branchName,
-                           String customerName, String status, String paymentStatus, BigDecimal total,
+                           String customerName, String customerPhone, String status, String paymentStatus, BigDecimal total,
                            String currency, int version, Instant createdAt, Instant updatedAt,
                            String deliveryStatus,String courierName,String paymentMethod,List<OrderItem> items) {
         OrderRow withItems(List<OrderItem> selectedItems) {
-            return new OrderRow(id,orderNumber,merchantId,branchId,branchName,customerName,status,paymentStatus,
+            return new OrderRow(id,orderNumber,merchantId,branchId,branchName,customerName,customerPhone,status,paymentStatus,
                 total,currency,version,createdAt,updatedAt,deliveryStatus,courierName,paymentMethod,selectedItems);
         }
     }
@@ -62,15 +62,11 @@ public class MerchantPortalService {
     public record StatusCount(String status,long count) {}
 
     public Context context(IdentityPrincipal principal) {
-        if (principal.roles().contains("ROLE_PLATFORM_OWNER")) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "PLATFORM_OWNER_PORTAL_FORBIDDEN",
-                "Este usuario pertenece a la administración de la plataforma.");
-        }
         List<Merchant> merchants = db.sql("""
             select distinct m.id,m.name,coalesce(mm.role_code,'TENANT_ADMIN') role_code
             from merchants m
             left join merchant_memberships mm on mm.merchant_id=m.id and mm.user_id=:user and mm.active
-            where m.tenant_id=:tenant and (:admin or mm.id is not null)
+            where m.tenant_id=:tenant and (:admin or (mm.id is not null and m.status='ACTIVE'))
             order by m.name
             """).param("user", principal.userId()).param("tenant", principal.tenantId())
             .param("admin", admin(principal)).query((rs, n) -> new Merchant(
@@ -87,8 +83,8 @@ public class MerchantPortalService {
         String normalized = search == null ? "" : search.trim();
         String state = status == null ? "" : status.trim().toUpperCase(Locale.ROOT);
         String where = """
-            from orders o join branches b on b.id=o.branch_id
-            join users u on u.id=o.customer_id
+            from orders o join branches b on b.id=o.branch_id and b.tenant_id=o.tenant_id
+            join users u on u.id=o.customer_id and u.tenant_id=o.tenant_id
             where o.tenant_id=:tenant and o.merchant_id=:merchant
               and (cast(:branch as uuid) is null or o.branch_id=:branch)
               and (:status='' or (case
@@ -100,7 +96,7 @@ public class MerchantPortalService {
         long total = query(where, principal, merchantId, branchId, state, normalized,
             "select count(*) " + where).query(Long.class).single();
         List<OrderRow> rows = query(where, principal, merchantId, branchId, state, normalized,
-            "select o.*,b.name branch_name,u.first_name||' '||u.last_name customer_name," +
+            "select o.*,b.name branch_name,u.first_name||' '||u.last_name customer_name,u.phone customer_phone," +
                 "(select d.status from deliveries d where d.order_id=o.id and d.tenant_id=o.tenant_id order by d.created_at desc limit 1) delivery_status," +
                 "(select cu.first_name||' '||cu.last_name from deliveries d join courier_profiles cp on cp.id=d.courier_id join users cu on cu.id=cp.user_id where d.order_id=o.id and d.tenant_id=o.tenant_id order by d.created_at desc limit 1) courier_name," +
                 "(select payment_method from payments where order_id=o.id order by created_at desc limit 1) payment_method," +
@@ -132,8 +128,9 @@ public class MerchantPortalService {
 
     public OrderDetail order(IdentityPrincipal principal, UUID id) {
         OrderRow row = db.sql("""
-            select o.*,b.name branch_name,u.first_name||' '||u.last_name customer_name
-            from orders o join branches b on b.id=o.branch_id join users u on u.id=o.customer_id
+            select o.*,b.name branch_name,u.first_name||' '||u.last_name customer_name,u.phone customer_phone
+            from orders o join branches b on b.id=o.branch_id and b.tenant_id=o.tenant_id
+            join users u on u.id=o.customer_id and u.tenant_id=o.tenant_id
             where o.id=:id and o.tenant_id=:tenant
             """).param("id", id).param("tenant", principal.tenantId()).query(this::row).optional()
             .orElseThrow(() -> notFound("Pedido no encontrado"));
@@ -189,7 +186,7 @@ public class MerchantPortalService {
             .param("user", principal.userId()).update();
         OrderDetail updated = order(principal, id);
         realtime.tenant(principal.tenantId(), "merchant/" + current.order.merchantId(), "ORDER_UPDATED", updated.order);
-        realtime.tenant(principal.tenantId(), "customers", "ORDER_UPDATED", updated.order);
+        realtime.customerRefresh(principal.tenantId());
         return updated;
     }
 
@@ -250,6 +247,7 @@ public class MerchantPortalService {
             select count(*) from merchant_memberships mm
             left join merchant_branch_assignments mba on mba.membership_id=mm.id
             where mm.tenant_id=:tenant and mm.user_id=:user and mm.merchant_id=:merchant and mm.active
+              and exists(select 1 from merchants m where m.id=mm.merchant_id and m.tenant_id=mm.tenant_id and m.status='ACTIVE')
               and (cast(:branch as uuid) is null or mba.branch_id=:branch)
             """).param("tenant", p.tenantId()).param("user", p.userId()).param("merchant", merchantId)
             .param("branch", branchId).query(Integer.class).single();
@@ -293,7 +291,7 @@ public class MerchantPortalService {
 
     private OrderRow row(ResultSet rs, int n) throws SQLException {
         return new OrderRow(rs.getObject("id", UUID.class), rs.getString("order_number"), rs.getObject("merchant_id", UUID.class),
-            rs.getObject("branch_id", UUID.class), rs.getString("branch_name"), rs.getString("customer_name"), effectiveStatus(rs),
+            rs.getObject("branch_id", UUID.class), rs.getString("branch_name"), rs.getString("customer_name"), column(rs,"customer_phone"), effectiveStatus(rs),
             rs.getString("payment_status"), rs.getBigDecimal("total"), rs.getString("currency"), rs.getInt("version"),
             instant(rs, "created_at"), instant(rs, "updated_at"),
             column(rs,"delivery_status"),column(rs,"courier_name"),column(rs,"payment_method"),List.of());

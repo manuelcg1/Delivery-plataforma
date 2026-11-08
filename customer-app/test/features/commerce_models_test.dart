@@ -132,11 +132,23 @@ void main() {
 
   test('maps required product options and their server prices', () {
     final product = Product.fromJson({
-      'id': 'product-1','name': 'Pizza','description': '',
-      'price': 20,'currency': 'PEN','optionGroups': [
-        {'id':'group-1','name':'Tamaño','selectionType':'SINGLE','required':true,'minimumSelections':1,'maximumSelections':1,'items':[
-          {'id':'item-1','name':'Grande','priceAdjustment':5}
-        ]}
+      'id': 'product-1',
+      'name': 'Pizza',
+      'description': '',
+      'price': 20,
+      'currency': 'PEN',
+      'optionGroups': [
+        {
+          'id': 'group-1',
+          'name': 'Tamaño',
+          'selectionType': 'SINGLE',
+          'required': true,
+          'minimumSelections': 1,
+          'maximumSelections': 1,
+          'items': [
+            {'id': 'item-1', 'name': 'Grande', 'priceAdjustment': 5}
+          ]
+        }
       ]
     });
     expect(product.optionGroups.single.required, isTrue);
@@ -144,9 +156,15 @@ void main() {
   });
 
   test('maps option snapshots returned with a cart item', () {
-    final item=CartItem.fromJson({'id':'cart-item','productName':'Pizza','quantity':1,'subtotal':25,'options':[
-      {'itemName':'Grande','priceAdjustment':5}
-    ]});
+    final item = CartItem.fromJson({
+      'id': 'cart-item',
+      'productName': 'Pizza',
+      'quantity': 1,
+      'subtotal': 25,
+      'options': [
+        {'itemName': 'Grande', 'priceAdjustment': 5}
+      ]
+    });
     expect(item.options.single.name, 'Grande');
     expect(item.options.single.priceAdjustment, 5);
   });

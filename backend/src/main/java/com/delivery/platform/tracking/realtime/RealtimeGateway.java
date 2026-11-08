@@ -21,6 +21,12 @@ public class RealtimeGateway {
     }
 
     public void tenant(UUID tenantId, String audience, String event, Object payload) {
+        if (audience.startsWith("merchant/")) {
+            UUID merchant=UUID.fromString(audience.substring("merchant/".length()));
+            int active=db.sql("select count(*) from merchants where id=? and tenant_id=? and status='ACTIVE'")
+                    .params(merchant,tenantId).query(Integer.class).single();
+            if (active==0) return;
+        }
         messaging.convertAndSend("/topic/tenants/" + tenantId + "/" + audience,
                 Map.of("event", event, "payload", payload));
     }
@@ -40,6 +46,10 @@ public class RealtimeGateway {
 
     public void customerOrder(UUID customerId, UUID orderId, Object payload) {
         messaging.convertAndSendToUser(customerId.toString(), "/queue/orders/"+orderId+"/tracking", payload);
+    }
+
+    public void customerRefresh(UUID tenantId) {
+        tenant(tenantId, "customers", "ORDER_UPDATED", Map.of("status", "UPDATED"));
     }
 
     record DeliveryAudience(UUID orderId, UUID customerId, UUID courierId, String status) {}

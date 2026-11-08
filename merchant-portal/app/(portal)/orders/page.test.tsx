@@ -14,6 +14,7 @@ const state=vi.hoisted(()=>({
   customerLatitude:-12.2,
   mapProps:null as null|{courier:{latitude:number;longitude:number}|null;customer:{latitude:number;longitude:number}|null},
   customized:false,
+  customerPhone:'+51912345678' as string|null,
 }));
 
 vi.mock('next/dynamic',()=>({
@@ -62,7 +63,7 @@ vi.mock('@/lib/api',()=>({
     ]:[{id:'plain',productName:'Producto',quantity:1,unitPrice:20,subtotal:20,notes:null,options:[]}];
     const order={
       id:'order-1',orderNumber:'CERKA-100',merchantId:'merchant-1',
-      branchId:'branch-1',branchName:'Centro',customerName:'Cliente',
+      branchId:'branch-1',branchName:'Centro',customerName:'Cliente',customerPhone:state.customerPhone,
       status:'READY',paymentStatus:'PAID',total:20,currency:'PEN',version:1,
       createdAt:'2026-08-15T12:00:00Z',updatedAt:'2026-08-15T12:00:00Z',
       deliveryStatus:'ASSIGNED',courierName:'Ana Repartidora',paymentMethod:'CARD',
@@ -96,6 +97,32 @@ afterEach(()=>{
   state.customerLatitude=-12.2;
   state.mapProps=null;
   state.customized=false;
+  state.customerPhone='+51912345678';
+});
+
+describe('teléfono de la cuenta del cliente',()=>{
+  it('muestra la cuenta en listado y detalle sin confundir el contacto de entrega',async()=>{
+    render(createElement(Orders));
+    const table=await screen.findByRole('table');
+    expect(await within(table).findByRole('link',{name:'Llamar al cliente: +51912345678'})).toHaveAttribute('href','tel:+51912345678');
+    fireEvent.click(screen.getByRole('button',{name:'Ver detalle'}));
+    const detail=await screen.findByRole('complementary');
+    expect(await within(detail).findByText('Teléfono del cliente')).toBeInTheDocument();
+    expect(within(detail).getByRole('link',{name:'Llamar al cliente: +51912345678'})).toBeInTheDocument();
+    expect(within(detail).getByText('Teléfono de entrega: 999999999')).toBeInTheDocument();
+  });
+
+  it('no sustituye un teléfono de cuenta ausente por el de entrega',async()=>{
+    state.customerPhone=null;
+    render(createElement(Orders));
+    const table=await screen.findByRole('table');
+    expect(await within(table).findByText('No registrado')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Ver detalle'}));
+    const detail=await screen.findByRole('complementary');
+    expect(await within(detail).findByText('No registrado')).toBeInTheDocument();
+    expect(within(detail).queryByRole('link',{name:/Llamar al cliente/})).not.toBeInTheDocument();
+    expect(within(detail).getByText('Teléfono de entrega: 999999999')).toBeInTheDocument();
+  });
 });
 
 describe('opciones del pedido',()=>{
