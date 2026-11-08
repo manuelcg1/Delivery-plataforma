@@ -2,13 +2,13 @@ package com.delivery.platform.identity.user.api;
 
 import com.delivery.platform.common.ApiException;
 import com.delivery.platform.identity.security.IdentityPrincipal;
+import com.delivery.platform.identity.auth.application.IdentityAccountService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,11 +25,11 @@ public class UserController {
     public record Roles(Set<UUID> roleIds) {}
 
     private final JdbcClient db;
-    private final PasswordEncoder encoder;
+    private final IdentityAccountService identities;
 
-    public UserController(JdbcClient db, PasswordEncoder encoder) {
+    public UserController(JdbcClient db, IdentityAccountService identities) {
         this.db = db;
-        this.encoder = encoder;
+        this.identities = identities;
     }
 
     @GetMapping
@@ -61,10 +61,13 @@ public class UserController {
             throw new ApiException(HttpStatus.FORBIDDEN, "ROLE_ASSIGN_FORBIDDEN", "No tienes permiso para asignar roles");
         UUID id = UUID.randomUUID();
         try {
-            db.sql("insert into users(id,tenant_id,email,password_hash,first_name,last_name,phone,status) values(:id,:t,lower(:e),:pw,:f,:l,:ph,'ACTIVE')")
-                    .param("id", id).param("t", principal.tenantId()).param("e", request.email())
-                    .param("pw", encoder.encode(request.password())).param("f", request.firstName())
+            IdentityAccountService.Account identity = identities.createForManagedUser(request.email(), request.password());
+            db.sql("insert into users(id,tenant_id,identity_id,email,password_hash,first_name,last_name,phone,status) values(:id,:t,:identity,lower(:e),:pw,:f,:l,:ph,'ACTIVE')")
+                .param("id", id).param("t", principal.tenantId()).param("identity", identity.id()).param("e", request.email())
+                .param("pw", identity.passwordHash()).param("f", request.firstName())
                     .param("l", request.lastName()).param("ph", request.phone()).update();
+            db.sql("insert into tenant_memberships(identity_id,tenant_id,user_id) values(:identity,:tenant,:user)")
+                .param("identity", identity.id()).param("tenant", principal.tenantId()).param("user", id).update();
             assign(principal, id, request.roleIds());
             audit(principal, "USER_CREATED", id);
         } catch (org.springframework.dao.DataIntegrityViolationException exception) {
@@ -94,6 +97,7 @@ public class UserController {
         if (!"ACTIVE".equals(request.status()) && hasRole(id, "TENANT_ADMIN") && isLastAdmin(principal))
             throw new ApiException(HttpStatus.CONFLICT, "LAST_TENANT_ADMIN", "No se puede desactivar el último administrador activo");
         db.sql("update users set status=:s,updated_at=now() where id=:id and tenant_id=:t").param("s", request.status()).param("id", id).param("t", principal.tenantId()).update();
+        identities.synchronizeMembershipStatus(id, principal.tenantId(), request.status());
         audit(principal, "USER_STATUS_CHANGED", id);
         return one(principal, id);
     }

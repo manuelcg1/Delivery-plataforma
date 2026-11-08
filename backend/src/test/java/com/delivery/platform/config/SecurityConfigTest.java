@@ -1,6 +1,7 @@
 package com.delivery.platform.config;
 
 import com.delivery.platform.identity.security.JwtService;
+import com.delivery.platform.identity.security.IdentityPrincipalLoader;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -21,10 +22,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SecurityConfigTest {
     @Autowired MockMvc mockMvc;
     @MockBean JwtService jwtService;
+    @MockBean IdentityPrincipalLoader principalLoader;
 
     @Test
     void permitsMobileAuthenticationEndpointsWithoutBearerToken() throws Exception {
         for (String endpoint : new String[]{
+                "/api/v1/auth/register-mobile",
                 "/api/v1/auth/register-customer",
                 "/api/v1/auth/login-mobile",
                 "/api/v1/auth/refresh-mobile"
@@ -41,6 +44,7 @@ class SecurityConfigTest {
     @RestController
     static class MobileAuthEndpoints {
         @PostMapping({
+                "/api/v1/auth/register-mobile",
                 "/api/v1/auth/register-customer",
                 "/api/v1/auth/login-mobile",
                 "/api/v1/auth/refresh-mobile"

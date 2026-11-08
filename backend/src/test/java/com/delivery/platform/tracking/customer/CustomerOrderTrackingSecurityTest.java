@@ -3,6 +3,7 @@ package com.delivery.platform.tracking.customer;
 import com.delivery.platform.config.SecurityConfig;
 import com.delivery.platform.identity.security.IdentityPrincipal;
 import com.delivery.platform.identity.security.JwtService;
+import com.delivery.platform.identity.security.IdentityPrincipalLoader;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -24,6 +25,7 @@ class CustomerOrderTrackingSecurityTest {
     @Autowired MockMvc mvc;
     @MockBean CustomerOrderTrackingService service;
     @MockBean JwtService jwt;
+    @MockBean IdentityPrincipalLoader principalLoader;
     private final UUID order = UUID.randomUUID(), tenant = UUID.randomUUID();
 
     @Test void unauthenticatedRequestIsUnauthorized() throws Exception {
@@ -33,7 +35,8 @@ class CustomerOrderTrackingSecurityTest {
 
     @Test void merchantAndCourierAreForbiddenFromCustomerEndpoint() throws Exception {
         for (String role : new String[]{"MERCHANT_OPERATOR", "COURIER"}) {
-            when(jwt.parse(role)).thenReturn(principal(role));
+            var tokenPrincipal = principal(role);
+            when(jwt.parse(role)).thenReturn(tokenPrincipal);
             mvc.perform(get("/api/v1/customer/orders/{orderId}/tracking", order)
                             .header("Authorization", "Bearer " + role))
                     .andExpect(status().isForbidden());
@@ -41,7 +44,8 @@ class CustomerOrderTrackingSecurityTest {
     }
 
     @Test void customerRoleCanUseEndpoint() throws Exception {
-        when(jwt.parse("customer")).thenReturn(principal("CUSTOMER"));
+        var tokenPrincipal = principal("CUSTOMER");
+        when(jwt.parse("customer")).thenReturn(tokenPrincipal);
         when(service.getTracking(eq(order), any())).thenReturn(new CustomerOrderTrackingResponse(
                 order, UUID.randomUUID(), "PICKED_UP", null, null, null, true, true));
         mvc.perform(get("/api/v1/customer/orders/{orderId}/tracking", order)
@@ -50,6 +54,8 @@ class CustomerOrderTrackingSecurityTest {
     }
 
     private IdentityPrincipal principal(String role) {
-        return new IdentityPrincipal(UUID.randomUUID(), tenant, "elite", Set.of(role), Set.of("TRACKING_VIEW"));
+        var principal = new IdentityPrincipal(UUID.randomUUID(), tenant, "elite", Set.of(role), Set.of("TRACKING_VIEW"));
+        when(principalLoader.load(principal.userId(), tenant)).thenReturn(java.util.Optional.of(principal));
+        return principal;
     }
 }

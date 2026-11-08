@@ -36,7 +36,7 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**")
                         .hasAuthority("PLATFORM_MANAGE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register-tenant",
-                                "/api/v1/auth/register-customer", "/api/v1/auth/login", "/api/v1/auth/login-mobile",
+                                "/api/v1/auth/register-mobile", "/api/v1/auth/register-customer", "/api/v1/auth/login", "/api/v1/auth/login-mobile",
                                 "/api/v1/auth/refresh", "/api/v1/auth/refresh-mobile", "/api/v1/auth/forgot-password",
                                 "/api/v1/auth/reset-password", "/api/v1/webhooks/payments/**")
                         .permitAll().anyRequest().authenticated())

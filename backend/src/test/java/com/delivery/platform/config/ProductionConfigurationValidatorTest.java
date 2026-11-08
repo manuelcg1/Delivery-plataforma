@@ -11,6 +11,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ProductionConfigurationValidatorTest {
     @Test
+    void acceptsManualYapeButRejectsSimulatedAndUnknownProviders() {
+        for(String provider:java.util.List.of("MANUAL_YAPE","SIMULATED","UNKNOWN")) {
+            var validator=new ProductionConfigurationValidator(
+                "a-strong-random-jwt-secret-that-is-more-than-forty-eight-characters",
+                "https://admin.example.com","https://admin.example.com",
+                "a-strong-random-webhook-secret-more-than-thirty-two",
+                "https://media.example.com",provider,false,"");
+            if(provider.equals("MANUAL_YAPE")) assertThatCode(validator::validate).doesNotThrowAnyException();
+            else assertThatThrownBy(validator::validate).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("PAYMENT_PROVIDER");
+        }
+    }
+    @Test
     void acceptsStrictProductionConfiguration() {
         var validator = new ProductionConfigurationValidator(
                 "a-strong-random-jwt-secret-that-is-more-than-forty-eight-characters",

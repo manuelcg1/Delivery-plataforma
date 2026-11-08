@@ -47,8 +47,8 @@ public class ProductionConfigurationValidator {
         if (corsOrigins.isBlank()) throw invalid("CORS_ALLOWED_ORIGINS must not be empty");
         Arrays.stream(corsOrigins.split(",")).map(String::trim)
                 .forEach(origin -> requireHttps("CORS_ALLOWED_ORIGINS", origin));
-        if (!"CASH_ONLY".equalsIgnoreCase(paymentProvider)) {
-            throw invalid("PAYMENT_PROVIDER must be CASH_ONLY until a real payment provider is implemented");
+        if (!"CASH_ONLY".equalsIgnoreCase(paymentProvider) && !"MANUAL_YAPE".equalsIgnoreCase(paymentProvider)) {
+            throw invalid("PAYMENT_PROVIDER must be CASH_ONLY or MANUAL_YAPE; simulated payment processing is forbidden");
         }
         if (googlePlacesEnabled && googleMapsApiKey.isBlank()) {
             throw invalid("GOOGLE_MAPS_API_KEY must be configured when GOOGLE_PLACES_ENABLED=true");

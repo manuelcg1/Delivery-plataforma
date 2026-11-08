@@ -21,7 +21,10 @@ class AuthPage extends ConsumerStatefulWidget {
 
 class _AuthPageState extends ConsumerState<AuthPage>
     with SingleTickerProviderStateMixin {
-  final tenant = TextEditingController(text: 'elite');
+  final phone = TextEditingController();
+  String profile = 'CUSTOMER';
+  String? validationError;
+  String? registrationMessage;
   final email = TextEditingController();
   final password = TextEditingController();
   final first = TextEditingController();
@@ -41,7 +44,7 @@ class _AuthPageState extends ConsumerState<AuthPage>
 
   @override
   void dispose() {
-    tenant.dispose();
+    phone.dispose();
     email.dispose();
     password.dispose();
     first.dispose();
@@ -52,17 +55,41 @@ class _AuthPageState extends ConsumerState<AuthPage>
 
   Future<void> _submit() async {
     FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      validationError = null;
+      registrationMessage = null;
+    });
     if (register) {
-      await ref.read(authControllerProvider.notifier).register(
-            tenant.text,
+      final normalized = phone.text.replaceAll(RegExp(r'[\s()\-]'), '');
+      if (!RegExp(r'^(?:\+51)?9[0-9]{8}$').hasMatch(normalized)) {
+        setState(() => validationError =
+            'Ingresa un teléfono/WhatsApp válido de Perú: 9 dígitos que empiecen con 9 o +51.');
+        return;
+      }
+      if (first.text.trim().isEmpty || last.text.trim().isEmpty) {
+        setState(() => validationError = 'Ingresa tu nombre y apellido.');
+        return;
+      }
+      final result = await ref.read(authControllerProvider.notifier).register(
+            '',
             first.text,
             last.text,
             email.text,
             password.text,
+            phone: phone.text.trim(),
+            profile: profile,
           );
+      if (!mounted) return;
+      if (result?.pendingApproval == true) {
+        setState(() {
+          register = false;
+          password.clear();
+          registrationMessage = result!.message;
+        });
+      }
     } else {
       await ref.read(authControllerProvider.notifier).login(
-            tenant.text,
+            '',
             email.text,
             password.text,
           );
@@ -70,7 +97,11 @@ class _AuthPageState extends ConsumerState<AuthPage>
   }
 
   void _toggleMode() {
-    setState(() => register = !register);
+    setState(() {
+      register = !register;
+      validationError = null;
+      registrationMessage = null;
+    });
     entrance.forward(from: 0);
   }
 
@@ -93,14 +124,19 @@ class _AuthPageState extends ConsumerState<AuthPage>
             final form = _AuthFormCard(
               compact: compact,
               register: register,
-              tenant: tenant,
+              phone: phone,
+              profile: profile,
+              onProfileChanged: (value) => setState(() => profile = value),
+              registrationMessage: registrationMessage,
               first: first,
               last: last,
               email: email,
               password: password,
               obscurePassword: obscurePassword,
               loading: auth.isLoading,
-              error: auth.error,
+              error: validationError == null
+                  ? auth.error
+                  : AppException(validationError!),
               apiBaseUrl: apiBaseUrl,
               onTogglePassword: () =>
                   setState(() => obscurePassword = !obscurePassword),
@@ -255,7 +291,10 @@ class _AuthFormCard extends StatelessWidget {
   const _AuthFormCard({
     required this.compact,
     required this.register,
-    required this.tenant,
+    required this.phone,
+    required this.profile,
+    required this.onProfileChanged,
+    required this.registrationMessage,
     required this.first,
     required this.last,
     required this.email,
@@ -269,7 +308,10 @@ class _AuthFormCard extends StatelessWidget {
     required this.onToggleMode,
   });
   final bool compact, register, obscurePassword, loading;
-  final TextEditingController tenant, first, last, email, password;
+  final TextEditingController phone, first, last, email, password;
+  final String profile;
+  final ValueChanged<String> onProfileChanged;
+  final String? registrationMessage;
   final Object? error;
   final String apiBaseUrl;
   final VoidCallback onTogglePassword, onSubmit, onToggleMode;
@@ -325,12 +367,6 @@ class _AuthFormCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4))),
                 ),
                 SizedBox(height: compact ? 12 : 18),
-                _CerkaTextField(
-                  controller: tenant,
-                  label: 'Código de empresa',
-                  icon: Icons.business_rounded,
-                  textInputAction: TextInputAction.next,
-                ),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 250),
                   child: register
@@ -351,6 +387,39 @@ class _AuthFormCard extends StatelessWidget {
                               icon: Icons.badge_outlined,
                               textInputAction: TextInputAction.next,
                             ),
+                            SizedBox(height: compact ? 10 : 14),
+                            _CerkaTextField(
+                              controller: phone,
+                              label: 'Teléfono / WhatsApp',
+                              icon: Icons.phone_outlined,
+                              keyboardType: TextInputType.phone,
+                              textInputAction: TextInputAction.next,
+                              autofillHints: const [
+                                AutofillHints.telephoneNumber
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text('Tipo de cuenta')),
+                            Wrap(
+                              spacing: 12,
+                              children: ['CUSTOMER', 'COURIER']
+                                  .map((value) => ChoiceChip(
+                                        label: Text(value == 'CUSTOMER'
+                                            ? 'Cliente'
+                                            : 'Repartidor'),
+                                        selected: profile == value,
+                                        onSelected: loading
+                                            ? null
+                                            : (_) => onProfileChanged(value),
+                                      ))
+                                  .toList(),
+                            ),
+                            if (profile == 'COURIER')
+                              const Text(
+                                  'Tu cuenta requerirá activación por el administrador.',
+                                  style: TextStyle(color: _secondaryText)),
                           ]),
                         )
                       : const SizedBox.shrink(key: ValueKey('login-fields')),
@@ -396,6 +465,13 @@ class _AuthFormCard extends StatelessWidget {
                               fontWeight: FontWeight.w600)),
                     ),
                   ),
+                if (registrationMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Semantics(
+                      liveRegion: true,
+                      child: Text(registrationMessage!,
+                          style: const TextStyle(color: _navy))),
+                ],
                 if (error != null) ...[
                   const SizedBox(height: 12),
                   Semantics(

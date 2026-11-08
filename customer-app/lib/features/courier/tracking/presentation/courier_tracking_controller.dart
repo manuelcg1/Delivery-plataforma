@@ -220,15 +220,19 @@ class CourierTrackingController extends Notifier<CourierTrackingState> {
 
   Future<void> restoreFromBackend(List<CourierDelivery> deliveries) async {
     final trackable = deliveries
-        .where((delivery) => shouldContinueTracking(delivery.status)).toList();
+        .where((delivery) => shouldContinueTracking(delivery.status))
+        .toList();
     final preferences = await SharedPreferences.getInstance();
     final persistedId = preferences.getString('courier.deliveryId');
-    final persisted = trackable.where((delivery) => delivery.id == persistedId).firstOrNull;
-    final active = persisted ?? (trackable.length == 1 ? trackable.single : null);
+    final persisted =
+        trackable.where((delivery) => delivery.id == persistedId).firstOrNull;
+    final active =
+        persisted ?? (trackable.length == 1 ? trackable.single : null);
     if (active == null) {
       if (_service.isActive) await stopTracking();
       if (trackable.length > 1) {
-        state = const TrackingError('Selecciona una entrega para compartir su ubicación.');
+        state = const TrackingError(
+            'Selecciona una entrega para compartir su ubicación.');
       }
       return;
     }

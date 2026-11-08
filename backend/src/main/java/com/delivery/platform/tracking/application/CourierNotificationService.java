@@ -46,17 +46,9 @@ public class CourierNotificationService {
           .param("token",token).param("platform",platform).update();
     }
 
-    @Transactional
+    /** Realtime is best-effort after commit; durable push is owned by ArrivalNotificationOutbox. */
     public void arrival(CourierArrivalEvent arrival) {
         String key="COURIER_ARRIVED:"+arrival.deliveryId();
-        int inserted=db.sql("""
-          insert into notifications(tenant_id,user_id,delivery_id,event_type,title,body,channel,status,deduplication_key)
-          values(:t,:u,:d,'COURIER_ARRIVED','¡Llegó tu pedido!',
-            'Tu repartidor ya se encuentra en el punto de entrega.','FCM','PENDING',:key)
-          on conflict(tenant_id,user_id,deduplication_key) where deduplication_key is not null do nothing
-          """).param("t",arrival.tenantId()).param("u",arrival.customerId()).param("d",arrival.deliveryId())
-          .param("key",key).update();
-        if(inserted==0) return;
         Map<String,Object> payload=new HashMap<>();
         payload.put("type","COURIER_ARRIVED"); payload.put("orderId",arrival.orderId());
         payload.put("deliveryId",arrival.deliveryId()); payload.put("status","ARRIVED_AT_CUSTOMER");
@@ -77,11 +69,7 @@ public class CourierNotificationService {
         realtime.tenant(arrival.tenantId(),"courier/"+audience[1],"COURIER_ARRIVED",payload);
         realtime.tenant(arrival.tenantId(),"merchant/"+audience[0],"COURIER_ARRIVED",payload);
         realtime.tenant(arrival.tenantId(),"admin","COURIER_ARRIVED",payload);
-        events.publishEvent(new PushDispatch(arrival.tenantId(),arrival.customerId(),key,payload));
-        db.sql("update deliveries set arrival_notified_at=now() where tenant_id=:t and id=:d and arrival_notified_at is null")
-          .param("t",arrival.tenantId()).param("d",arrival.deliveryId()).update();
-        db.sql("update courier_arrival_audit set notified_at=now() where tenant_id=:t and delivery_id=:d and notified_at is null")
-          .param("t",arrival.tenantId()).param("d",arrival.deliveryId()).update();
+
     }
 
     @Transactional
@@ -149,22 +137,6 @@ public class CourierNotificationService {
             events.publishEvent(new PushDispatch((UUID)row[0],(UUID)row[1],eventId,retryPayload));
         }
 
-        List<Object[]> arrivalRetries=db.sql("""
-          select n.tenant_id,n.user_id,n.delivery_id,d.order_id,n.deduplication_key
-          from notifications n join deliveries d on d.id=n.delivery_id and d.tenant_id=n.tenant_id
-          where n.event_type='COURIER_ARRIVED' and n.status='FAILED' and n.attempt_count<5
-            and n.last_attempt_at<now()-interval '30 seconds'
-          for update of n skip locked
-          """).query((r,n)->new Object[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class),
-            r.getObject(3,UUID.class),r.getObject(4,UUID.class),r.getString(5)}).list();
-        for(Object[] row:arrivalRetries) {
-            Map<String,Object> retry=new HashMap<>();
-            retry.put("type","COURIER_ARRIVED"); retry.put("deliveryId",row[2]); retry.put("orderId",row[3]);
-            retry.put("status","ARRIVED_AT_CUSTOMER"); retry.put("deliveryStatus","ARRIVED_AT_CUSTOMER");
-            retry.put("route","/orders/"+row[3]); retry.put("title","¡Llegó tu pedido!");
-            retry.put("body","Tu repartidor ya se encuentra en el punto de entrega.");
-            events.publishEvent(new PushDispatch((UUID)row[0],(UUID)row[1],(String)row[4],retry));
-        }
     }
 
     private List<Object[]> assignmentRows(String condition) {

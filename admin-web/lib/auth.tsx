@@ -19,6 +19,7 @@ type AuthContext = {
   user: Me | null;
   loading: boolean;
   login: (value: unknown) => Promise<void>;
+  switchTenant: (tenantCode: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   can: (permission: string) => boolean;
@@ -28,6 +29,7 @@ const C = createContext<AuthContext>({
   user: null,
   loading: true,
   login: async () => {},
+  switchTenant: async () => {},
   changePassword: async () => {},
   logout: async () => {},
   can: () => false,
@@ -60,6 +62,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push(session.user.mustChangePassword ? '/change-password' : session.user.roles.includes('ROLE_PLATFORM_OWNER') ? '/platform' : '/dashboard');
   }
 
+  async function switchTenant(tenantCode: string) {
+    const session = await api<{ accessToken: string; user: Me }>(
+      '/api/v1/auth/context',
+      { method: 'POST', body: JSON.stringify({ tenantCode }) },
+      false,
+    );
+    setAccessToken(session.accessToken);
+    setUser(session.user);
+    router.replace('/dashboard');
+  }
+
   async function changePassword(currentPassword: string, newPassword: string) {
     await api('/api/v1/auth/change-password', {
       method: 'POST',
@@ -76,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push('/login');
   }
 
-  return <C.Provider value={{ user, loading, login, changePassword, logout, can: (permission) => !!user?.permissions.includes(permission) }}>{children}</C.Provider>;
+  return <C.Provider value={{ user, loading, login, switchTenant, changePassword, logout, can: (permission) => !!user?.permissions.includes(permission) }}>{children}</C.Provider>;
 }
 
 export const useAuth = () => useContext(C);

@@ -6,6 +6,20 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: delivery_test
+          POSTGRES_PASSWORD: ci-only-postgres-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U delivery_test -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -13,8 +27,13 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: mvn -B test
+      - run: mvn -B test -Didentity.migration.jdbcUrl=jdbc:postgresql://localhost:5432/postgres -Dmerchant.test.jdbcUrl=jdbc:postgresql://localhost:5432/postgres
         working-directory: backend
+        env:
+          IDENTITY_MIGRATION_DB_USER: delivery_test
+          IDENTITY_MIGRATION_DB_PASSWORD: ci-only-postgres-password
+          MERCHANT_TEST_DB_USER: delivery_test
+          MERCHANT_TEST_DB_PASSWORD: ci-only-postgres-password
 
   admin-web:
     runs-on: ubuntu-latest
@@ -58,6 +77,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.41.7'
           channel: stable
           cache: true
       - run: flutter pub get
@@ -71,6 +91,17 @@ jobs:
       - name: Create ephemeral CI signing key
         working-directory: customer-app
         run: keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/customer-ci.jks" -storepass ci-only-password -keypass ci-only-password -alias customer-ci -dname "CN=CI,O=Delivery,C=PE" -keyalg RSA -keysize 2048 -validity 2
+      - name: Create compile-only Firebase client configuration
+        working-directory: customer-app
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          config = {"project_info": {"project_number": "123456789012", "project_id": "delivery-ci"},
+            "client": [{"client_info": {"mobilesdk_app_id": "1:123456789012:android:0123456789abcdef", "android_client_info": {"package_name": "com.delivery.platform.customer"}},
+              "api_key": [{"current_key": "ci-placeholder-not-for-runtime"}]}], "configuration_version": "1"}
+          Path('android/app/google-services.json').write_text(json.dumps(config))
+          PY
       - name: Build signed release APK
         env:
           DELIVERY_ANDROID_STORE_FILE: ${{ runner.temp }}/customer-ci.jks
@@ -95,9 +126,12 @@ jobs:
           REDIS_PASSWORD: ci-redis-password
           JWT_SECRET: ci-only-jwt-secret-that-is-longer-than-forty-eight-characters
           PAYMENT_WEBHOOK_SECRET: ci-only-webhook-secret-longer-than-thirty-two
+          MOBILE_TENANT_CODE: ci-test-tenant
           MINIO_ROOT_USER: ci-minio
           MINIO_ROOT_PASSWORD: ci-minio-password
           MAIL_HOST: smtp.example.com
           MAIL_USERNAME: ci
           MAIL_PASSWORD: ci
+          GOOGLE_MAPS_API_KEY: ci-only-placeholder-not-used-for-network-requests
+          FIREBASE_SERVICE_ACCOUNT_FILE: ${{ runner.temp }}/firebase-service-account.json
         run: docker compose --env-file .env.production.example -f docker-compose.prod.yml config --quiet

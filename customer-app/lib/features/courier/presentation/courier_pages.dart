@@ -123,8 +123,7 @@ class CourierDeliveriesPage extends ConsumerStatefulWidget {
       _CourierDeliveriesPageState();
 }
 
-class _CourierDeliveriesPageState
-    extends ConsumerState<CourierDeliveriesPage> {
+class _CourierDeliveriesPageState extends ConsumerState<CourierDeliveriesPage> {
   late Future<(CourierProfile, List<CourierDelivery>)> future;
   StreamSubscription<RealtimeEvent>? assignmentSubscription;
   Timer? fallbackRefresh;
@@ -132,7 +131,6 @@ class _CourierDeliveriesPageState
   static const Color _cerkaCoral = Color(0xFFFF5A5A);
   static const Color _cerkaNavy = Color(0xFF0F1E3A);
   static const Color _cerkaBackground = Color(0xFFF4F4F4);
-  static const Color _cerkaSoftCoral = Color(0xFFFFE5E5);
   static const Color _cerkaGray = Color(0xFF647185);
   static const Color _cerkaDivider = Color(0xFFE3E8F0);
   static const Color _cerkaGreen = Color(0xFF16A34A);
@@ -143,24 +141,22 @@ class _CourierDeliveriesPageState
     future = load();
 
     Future.microtask(() {
-      assignmentSubscription =
-          ref.read(realtimeClientProvider).events.listen(
-                (event) {
-              if (mounted &&
-                  const {
-                    'COURIER_ASSIGNMENT_PENDING',
-                    'CourierAssigned',
-                  }.contains(event.type)) {
-                refresh();
-              }
-            },
-          );
+      assignmentSubscription = ref.read(realtimeClientProvider).events.listen(
+        (event) {
+          if (mounted &&
+              const {
+                'COURIER_ASSIGNMENT_PENDING',
+                'CourierAssigned',
+              }.contains(event.type)) {
+            refresh();
+          }
+        },
+      );
     });
 
-    fallbackRefresh =
-        Timer.periodic(const Duration(seconds: 10), (_) {
-          if (mounted) refresh();
-        });
+    fallbackRefresh = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) refresh();
+    });
   }
 
   @override
@@ -177,7 +173,7 @@ class _CourierDeliveriesPageState
     final deliveries = await repository.deliveries();
 
     Future.microtask(
-          () => ref
+      () => ref
           .read(courierTrackingControllerProvider.notifier)
           .restoreFromBackend(deliveries),
     );
@@ -232,13 +228,13 @@ class _CourierDeliveriesPageState
           final active = deliveries
               .where(
                 (item) => !const {
-              'DELIVERED',
-              'FAILED',
-              'CANCELLED',
-              'REJECTED',
-              'EXPIRED',
-            }.contains(item.status),
-          )
+                  'DELIVERED',
+                  'FAILED',
+                  'CANCELLED',
+                  'REJECTED',
+                  'EXPIRED',
+                }.contains(item.status),
+              )
               .toList();
 
           final delivered = sortedDeliveredOrders(deliveries);
@@ -263,14 +259,11 @@ class _CourierDeliveriesPageState
 
                 Text(
                   'Hola, ${profile.name}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: _cerkaNavy,
-                    letterSpacing: -0.4,
-                  ),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: _cerkaNavy,
+                        letterSpacing: -0.4,
+                      ),
                 ),
 
                 const SizedBox(height: 6),
@@ -333,13 +326,10 @@ class _CourierDeliveriesPageState
                           ),
                         ),
                       ),
-
                       const SizedBox(width: 13),
-
                       const Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'Disponibilidad',
@@ -361,10 +351,8 @@ class _CourierDeliveriesPageState
                           ],
                         ),
                       ),
-
                       Container(
-                        padding:
-                        const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         decoration: BoxDecoration(
                           color: _cerkaBackground,
                           borderRadius: BorderRadius.circular(12),
@@ -426,12 +414,11 @@ class _CourierDeliveriesPageState
                     Expanded(
                       child: Text(
                         'Entrega activa',
-                        style:
-                        Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: _cerkaNavy,
-                          letterSpacing: -0.3,
-                        ),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: _cerkaNavy,
+                              letterSpacing: -0.3,
+                            ),
                       ),
                     ),
                     if (active.isNotEmpty)
@@ -486,7 +473,7 @@ class _CourierDeliveriesPageState
                   ),
 
                 ...active.map(
-                      (delivery) => Padding(
+                  (delivery) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: _ActiveDeliveryCard(
                       delivery: delivery,
@@ -494,10 +481,9 @@ class _CourierDeliveriesPageState
                         await Navigator.push<void>(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                CourierDeliveryPage(
-                                  delivery: delivery,
-                                ),
+                            builder: (_) => CourierDeliveryPage(
+                              delivery: delivery,
+                            ),
                           ),
                         );
 
@@ -518,24 +504,21 @@ class _CourierDeliveriesPageState
                     Expanded(
                       child: Text(
                         'Entregados',
-                        style:
-                        Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: _cerkaNavy,
-                          letterSpacing: -0.3,
-                        ),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: _cerkaNavy,
+                              letterSpacing: -0.3,
+                            ),
                       ),
                     ),
-
                     if (delivered.isNotEmpty)
                       TextButton(
                         onPressed: () => Navigator.push<void>(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                CourierDeliveredOrdersPage(
-                                  deliveries: delivered,
-                                ),
+                            builder: (_) => CourierDeliveredOrdersPage(
+                              deliveries: delivered,
+                            ),
                           ),
                         ),
                         style: TextButton.styleFrom(
@@ -608,17 +591,16 @@ class _CourierDeliveriesPageState
                   ),
 
                 ...recentDelivered.map(
-                      (delivery) => Padding(
+                  (delivery) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: _DeliveredOrderCard(
                       delivery: delivery,
                       onTap: () => Navigator.push<void>(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              CourierDeliveryPage(
-                                delivery: delivery,
-                              ),
+                          builder: (_) => CourierDeliveryPage(
+                            delivery: delivery,
+                          ),
                         ),
                       ),
                     ),
@@ -1207,15 +1189,14 @@ class _CourierNotificationsPageState
 
     fallbackRefresh = Timer.periodic(
       const Duration(seconds: 10),
-          (_) {
+      (_) {
         if (mounted) reload();
       },
     );
   }
 
   void reload() {
-    final next =
-    ref.read(courierRepositoryProvider).notifications();
+    final next = ref.read(courierRepositoryProvider).notifications();
 
     setState(() {
       future = next;
@@ -1264,9 +1245,7 @@ class _CourierNotificationsPageState
                 ),
                 children: [
                   _buildHeader(context),
-
                   const SizedBox(height: 24),
-
                   _CourierError(
                     message: message,
                     onRetry: reload,
@@ -1275,8 +1254,7 @@ class _CourierNotificationsPageState
               );
             }
 
-            final items =
-                snapshot.data ?? const <CourierNotification>[];
+            final items = snapshot.data ?? const <CourierNotification>[];
 
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -1299,8 +1277,7 @@ class _CourierNotificationsPageState
                 // CARGANDO
                 // =========================
 
-                if (snapshot.connectionState !=
-                    ConnectionState.done)
+                if (snapshot.connectionState != ConnectionState.done)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: const LinearProgressIndicator(
@@ -1310,16 +1287,14 @@ class _CourierNotificationsPageState
                     ),
                   ),
 
-                if (snapshot.connectionState !=
-                    ConnectionState.done)
+                if (snapshot.connectionState != ConnectionState.done)
                   const SizedBox(height: 20),
 
                 // =========================
                 // ESTADO VACÍO
                 // =========================
 
-                if (snapshot.connectionState ==
-                    ConnectionState.done &&
+                if (snapshot.connectionState == ConnectionState.done &&
                     items.isEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -1336,9 +1311,7 @@ class _CourierNotificationsPageState
                     child: const Column(
                       children: [
                         _CourierNotificationEmptyIcon(),
-
                         SizedBox(height: 18),
-
                         Text(
                           'No tienes notificaciones',
                           textAlign: TextAlign.center,
@@ -1348,9 +1321,7 @@ class _CourierNotificationsPageState
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-
                         SizedBox(height: 7),
-
                         Text(
                           'Cuando recibas una actualización de tus entregas aparecerá aquí.',
                           textAlign: TextAlign.center,
@@ -1369,36 +1340,31 @@ class _CourierNotificationsPageState
                 // =========================
 
                 ...items.map(
-                      (item) => Padding(
+                  (item) => Padding(
                     padding: const EdgeInsets.only(
                       bottom: 12,
                     ),
                     child: Material(
                       color: Colors.white,
-                      borderRadius:
-                      BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(18),
                       child: InkWell(
-                        borderRadius:
-                        BorderRadius.circular(18),
-
+                        borderRadius: BorderRadius.circular(18),
                         onTap: () async {
                           try {
                             final delivery = await ref
-                                .read(
-                                courierRepositoryProvider)
+                                .read(courierRepositoryProvider)
                                 .delivery(
-                              item.deliveryId,
-                            );
+                                  item.deliveryId,
+                                );
 
                             if (!context.mounted) return;
 
                             await Navigator.push<void>(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    CourierDeliveryPage(
-                                      delivery: delivery,
-                                    ),
+                                builder: (_) => CourierDeliveryPage(
+                                  delivery: delivery,
+                                ),
                               ),
                             );
 
@@ -1411,20 +1377,17 @@ class _CourierNotificationsPageState
                                 .exception(error)
                                 .message;
 
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(
+                            ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(message),
                               ),
                             );
                           }
                         },
-
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            borderRadius:
-                            BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(18),
                             border: Border.all(
                               color: _cerkaDivider,
                             ),
@@ -1434,14 +1397,12 @@ class _CourierNotificationsPageState
                                   alpha: 0.025,
                                 ),
                                 blurRadius: 12,
-                                offset:
-                                const Offset(0, 4),
+                                offset: const Offset(0, 4),
                               ),
                             ],
                           ),
                           child: Row(
-                            crossAxisAlignment:
-                            CrossAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               // Ícono
                               Container(
@@ -1449,14 +1410,12 @@ class _CourierNotificationsPageState
                                 height: 48,
                                 decoration: BoxDecoration(
                                   color: _cerkaSoftCoral,
-                                  borderRadius:
-                                  BorderRadius.circular(
+                                  borderRadius: BorderRadius.circular(
                                     15,
                                   ),
                                 ),
                                 child: const Icon(
-                                  Icons
-                                      .notifications_active_outlined,
+                                  Icons.notifications_active_outlined,
                                   color: _cerkaCoral,
                                   size: 24,
                                 ),
@@ -1467,30 +1426,24 @@ class _CourierNotificationsPageState
                               // Texto
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       item.title,
                                       maxLines: 2,
-                                      overflow:
-                                      TextOverflow.ellipsis,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: _cerkaNavy,
                                         fontSize: 15,
-                                        fontWeight:
-                                        FontWeight.w800,
+                                        fontWeight: FontWeight.w800,
                                         height: 1.25,
                                       ),
                                     ),
-
                                     const SizedBox(height: 5),
-
                                     Text(
                                       item.body,
                                       maxLines: 3,
-                                      overflow:
-                                      TextOverflow.ellipsis,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: _cerkaGray,
                                         fontSize: 12.5,
@@ -1509,14 +1462,12 @@ class _CourierNotificationsPageState
                                 height: 32,
                                 decoration: BoxDecoration(
                                   color: _cerkaBackground,
-                                  borderRadius:
-                                  BorderRadius.circular(
+                                  borderRadius: BorderRadius.circular(
                                     10,
                                   ),
                                 ),
                                 child: const Icon(
-                                  Icons
-                                      .arrow_forward_ios_rounded,
+                                  Icons.arrow_forward_ios_rounded,
                                   size: 13,
                                   color: _cerkaGray,
                                 ),
@@ -1542,16 +1493,13 @@ class _CourierNotificationsPageState
       children: [
         Text(
           'Notificaciones',
-          style:
-          Theme.of(context).textTheme.headlineMedium?.copyWith(
-            color: _cerkaNavy,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-          ),
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                color: _cerkaNavy,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
         ),
-
         const SizedBox(height: 6),
-
         const Text(
           'Revisa las novedades de tus entregas',
           style: TextStyle(
@@ -1592,7 +1540,6 @@ class CourierProfilePage extends ConsumerWidget {
   static const Color _cerkaCoral = Color(0xFFFF5A5A);
   static const Color _cerkaNavy = Color(0xFF0F1E3A);
   static const Color _cerkaBackground = Color(0xFFF4F4F4);
-  static const Color _cerkaSoftCoral = Color(0xFFFFE5E5);
   static const Color _cerkaGray = Color(0xFF647185);
   static const Color _cerkaDivider = Color(0xFFE3E8F0);
 
@@ -1615,10 +1562,10 @@ class CourierProfilePage extends ConsumerWidget {
               Text(
                 'Perfil del repartidor',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: _cerkaNavy,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                ),
+                      color: _cerkaNavy,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
               ),
 
               const SizedBox(height: 6),
@@ -1691,17 +1638,14 @@ class CourierProfilePage extends ConsumerWidget {
                                   letterSpacing: -0.3,
                                 ),
                               ),
-
                               const SizedBox(height: 7),
-
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,
                                   vertical: 5,
                                 ),
                                 decoration: BoxDecoration(
-                                  color:
-                                  Colors.white.withValues(alpha: 0.18),
+                                  color: Colors.white.withValues(alpha: 0.18),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Text(
@@ -1719,16 +1663,12 @@ class CourierProfilePage extends ConsumerWidget {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 22),
-
                     Container(
                       height: 1,
                       color: Colors.white.withValues(alpha: 0.20),
                     ),
-
                     const SizedBox(height: 18),
-
                     const Text(
                       'Empresa',
                       style: TextStyle(
@@ -1737,9 +1677,7 @@ class CourierProfilePage extends ConsumerWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-
                     const SizedBox(height: 4),
-
                     Row(
                       children: [
                         const Icon(

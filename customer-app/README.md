@@ -1,6 +1,6 @@
 # Customer Mobile App v0.7
 
-Aplicación Flutter para clientes finales. Implementa un flujo conectado al backend: registro e inicio de sesión, sesión segura, direcciones, descubrimiento de comercios, catálogo, carrito, checkout idempotente, pago simulado, pedidos y tracking.
+Aplicación Flutter para clientes finales. Implementa registro e inicio de sesión, sesión segura, direcciones, comercios, catálogo, carrito, declaración Yape manual, pedidos y tracking. La declaración utiliza una clave estable para reintentos; una creación de pedido cuya respuesta se perdió requiere revisión y no se repite automáticamente.
 
 ## Requisitos y ejecución
 
@@ -31,9 +31,11 @@ flutter build apk --debug
 
 ## Android debug
 
-La variante debug no necesita certificado propio, se instala como una aplicación
-independiente (`com.delivery.platform.customer.debug`) y permite HTTP para probar
-contra el backend local.
+La variante debug usa la firma de depuración y permite HTTP para probar contra
+el backend local. Actualmente comparte el identificador `com.delivery.platform.customer`
+con release; no es una aplicación independiente. Una firma diferente puede impedir
+actualizar una instalación existente. No desinstale una aplicación con datos para
+resolverlo sin respaldarlos previamente.
 
 Con el backend publicado en el puerto `8080`, desde un emulador Android basta con:
 
@@ -84,6 +86,10 @@ flutter build apk --release --dart-define=ENVIRONMENT=production --dart-define=A
 ```
 
 El APK queda en `build/app/outputs/flutter-apk/app-release.apk`; el AAB en `build/app/outputs/bundle/release/app-release.aab`. Antes de publicar, incrementar `version` en `pubspec.yaml` y conservar de forma segura la upload key.
+
+Un APK debug apuntando a `https://api.cerka.site` sigue siendo una versión de prueba,
+no un release firmado para distribución. Firebase requiere el archivo externo
+`android/app/google-services.json` correspondiente al identificador y proyecto.
 
 Si Gradle muestra `PKIX path building failed`, importe el certificado raíz corporativo en el truststore del JDK usado por Flutter/Gradle. No desactive la validación TLS.
 

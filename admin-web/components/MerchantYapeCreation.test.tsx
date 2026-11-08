@@ -1,0 +1,42 @@
+import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import {describe,it,expect,vi,beforeEach} from 'vitest';
+import NewMerchant from '@/app/(private)/merchants/new/page';
+import {api,ApiClientError} from '@/lib/api';
+const push=vi.hoisted(()=>vi.fn());
+vi.mock('next/navigation',()=>({useRouter:()=>({push})}));
+vi.mock('@/lib/auth',()=>({useAuth:()=>({can:(permission:string)=>['CATALOG_MEDIA_UPLOAD','CATALOG_MERCHANTS_CREATE'].includes(permission)})}));
+vi.mock('@/lib/api',async importOriginal=>({...await importOriginal<typeof import('@/lib/api')>(),api:vi.fn()}));
+beforeEach(()=>{vi.clearAllMocks();URL.createObjectURL=vi.fn(()=> 'blob:qr');URL.revokeObjectURL=vi.fn();vi.stubGlobal('Image',class{naturalWidth=240;naturalHeight=240;onload:(()=>void)|null=null;set src(_value:string){queueMicrotask(()=>this.onload?.())}})});
+describe('Yape during merchant creation',()=>{
+  it('rejects an oversized decoded QR before creating the merchant or portal',async()=>{
+    vi.stubGlobal('Image',class{naturalWidth=4097;naturalHeight=200;onload:(()=>void)|null=null;set src(_value:string){queueMicrotask(()=>this.onload?.())}});
+    render(<NewMerchant/>);
+    fireEvent.change(screen.getByLabelText('Nombre comercial'),{target:{value:'Mi comercio'}});
+    fireEvent.change(screen.getByLabelText('Código'),{target:{value:'mi-comercio'}});
+    fireEvent.click(screen.getByLabelText('Habilitar Yape'));
+    fireEvent.change(screen.getByLabelText('Número Yape'),{target:{value:'912345678'}});
+    fireEvent.change(screen.getByLabelText('Titular Yape'),{target:{value:'Ana'}});
+    fireEvent.change(screen.getByLabelText('QR Yape'),{target:{files:[new File([new Uint8Array([137,80,78,71,13,10,26,10])],'qr.png',{type:'image/png'})]}});
+    fireEvent.click(screen.getByRole('button',{name:'Crear comercio'}));
+    expect(await screen.findByText(/no debe superar 4096/)).toBeInTheDocument();
+    expect(api).not.toHaveBeenCalled();
+  });
+  it('preserves text and retries only Yape after the merchant was created',async()=>{
+    vi.mocked(api).mockResolvedValueOnce({id:'merchant-1'}).mockRejectedValueOnce(new ApiClientError('Subida interrumpida')).mockResolvedValueOnce({});
+    render(<NewMerchant/>);
+    fireEvent.change(screen.getByLabelText('Nombre comercial'),{target:{value:'Mi comercio'}});
+    fireEvent.change(screen.getByLabelText('Código'),{target:{value:'mi-comercio'}});
+    fireEvent.click(screen.getByLabelText('Habilitar Yape'));
+    fireEvent.change(screen.getByLabelText('Número Yape'),{target:{value:'912345678'}});
+    fireEvent.change(screen.getByLabelText('Titular Yape'),{target:{value:'Ana Pérez'}});
+    fireEvent.change(screen.getByLabelText('QR Yape'),{target:{files:[new File([new Uint8Array([137,80,78,71,13,10,26,10])],'qr.png',{type:'image/png'})]}});
+    fireEvent.click(screen.getByRole('button',{name:'Crear comercio'}));
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('Titular Yape')).toHaveValue('Ana Pérez');
+    expect(screen.getByLabelText('Nombre comercial')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button',{name:/Reintentar/}));
+    await waitFor(()=>expect(push).toHaveBeenCalledWith('/merchants/merchant-1'));
+    expect(vi.mocked(api).mock.calls.filter(([path])=>path==='/api/v1/merchants')).toHaveLength(1);
+    expect(vi.mocked(api).mock.calls[2][0]).toBe('/api/v1/merchants/merchant-1/payment-methods/yape');
+  });
+});

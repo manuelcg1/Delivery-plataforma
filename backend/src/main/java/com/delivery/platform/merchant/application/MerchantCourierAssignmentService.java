@@ -114,13 +114,21 @@ public class MerchantCourierAssignmentService {
     private AssignmentInfo assign(IdentityPrincipal p,Scope s,UUID courier,String type,String idempotencyKey,boolean requireReady) {
         if(requireReady&&!isAssignableOrderStatus(s.orderStatus()))
             throw conflict("ORDER_NOT_ASSIGNABLE","El pedido no está listo para asignar.");
+        db.sql("select id from deliveries where id=:delivery and tenant_id=:tenant for update")
+            .param("delivery",s.deliveryId()).param("tenant",p.tenantId()).query(UUID.class).optional()
+            .orElseThrow(()->conflict("DELIVERY_NOT_FOUND","Entrega no encontrada."));
         int active=db.sql("select count(*) from delivery_assignments where tenant_id=:tenant and delivery_id=:delivery and status='PENDING'")
             .param("tenant",p.tenantId()).param("delivery",s.deliveryId()).query(Integer.class).single();
         if(active>0)throw conflict("ORDER_ALREADY_ASSIGNED","El pedido ya fue asignado por otro usuario.");
         UUID courierUser=db.sql("""
-            select c.user_id from courier_profiles c join courier_availability a on a.courier_id=c.id
-            where c.id=:courier and c.tenant_id=:tenant and c.status='ACTIVE' and a.status='ONLINE'
-              and c.current_active_deliveries<c.max_active_deliveries and (a.branch_id is null or a.branch_id=:branch)
+            update courier_profiles c
+            set current_active_deliveries=current_active_deliveries+1,updated_at=now()
+            where c.id=:courier and c.tenant_id=:tenant and c.status='ACTIVE'
+              and c.current_active_deliveries<c.max_active_deliveries
+              and exists(select 1 from courier_availability a where a.courier_id=c.id
+                and a.tenant_id=c.tenant_id and a.status='ONLINE'
+                and (a.branch_id is null or a.branch_id=:branch))
+            returning c.user_id
             """).param("courier",courier).param("tenant",p.tenantId()).param("branch",s.branchId()).query(UUID.class).optional()
             .orElseThrow(()->conflict("COURIER_NOT_AVAILABLE","Repartidor no disponible."));
         UUID assignmentId=UUID.randomUUID();
@@ -137,14 +145,11 @@ public class MerchantCourierAssignmentService {
         db.sql("insert into delivery_status_history(tenant_id,delivery_id,status,actor_id,actor_type,notes,old_status,correlation_id) values(:tenant,:delivery,'ASSIGNED',:user,'USER','Pedido asignado al repartidor.', 'PENDING',:correlation)")
             .param("tenant",p.tenantId()).param("delivery",s.deliveryId()).param("user",p.userId())
             .param("correlation",assignmentId.toString()).update();
-        db.sql("update courier_profiles set current_active_deliveries=current_active_deliveries+1 where id=:courier and tenant_id=:tenant")
-            .param("courier",courier).param("tenant",p.tenantId()).update();
         Map<String,Object> assignmentPayload=assignmentPayload(p.tenantId(),s.orderId(),s.deliveryId(),assignmentId);
         log.info("Courier assigned tenant={} order={} delivery={} courier={} assignment={}",p.tenantId(),s.orderId(),s.deliveryId(),courier,assignmentId);
         log.info("Publishing NEW_DELIVERY_ASSIGNMENT tenant={} delivery={} assignment={}",p.tenantId(),s.deliveryId(),assignmentId);
         courierNotifications.assignment(p.tenantId(),courierUser,assignmentPayload);
-        realtime.tenant(p.tenantId(),"customers","ORDER_UPDATED",
-            Map.of("orderId",s.orderId(),"deliveryId",s.deliveryId(),"status","ASSIGNED"));
+        realtime.customerRefresh(p.tenantId());
         realtime.delivery(p.tenantId(),s.deliveryId(),"CourierAssigned",
             Map.of("orderId",s.orderId(),"deliveryId",s.deliveryId(),"status","ASSIGNED"));
         audit(p,s,"COURIER_ASSIGNMENT_PENDING",type,courier,s.orderStatus(),s.orderStatus(),"PENDING");

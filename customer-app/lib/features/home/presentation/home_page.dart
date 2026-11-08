@@ -8,6 +8,9 @@ import '../../auth/presentation/auth_controller.dart';
 import '../../orders/presentation/commerce_pages.dart';
 import '../../address/presentation/customer_address_form_page.dart';
 import '../data/customer_repository.dart';
+import '../domain/merchant_category.dart';
+import 'merchant_category_carousel.dart';
+import 'merchant_catalog_visuals.dart';
 
 final customerRepositoryProvider = Provider(
   (ref) => CustomerRepository(ref.watch(apiClientProvider)),
@@ -22,14 +25,29 @@ final favoritesProvider = FutureProvider(
   (ref) => ref.watch(customerRepositoryProvider).favorites(),
 );
 
-class HomePage extends ConsumerWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends ConsumerState<HomePage> {
+  MerchantCategory? _selectedCategory;
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider).value;
     final addresses = ref.watch(addressesProvider);
     final merchants = ref.watch(merchantsProvider);
+    final filteredMerchants = merchants.whenData((items) =>
+        _selectedCategory == null
+            ? items
+            : items
+                .where((merchant) =>
+                    MerchantCategory.fromCode(merchant.merchantType) ==
+                    _selectedCategory)
+                .toList(growable: false));
 
     return DecoratedBox(
       decoration: const BoxDecoration(
@@ -151,6 +169,20 @@ class HomePage extends ConsumerWidget {
 
                           const SizedBox(height: 26),
 
+                          Text('Categorías',
+                              style: GoogleFonts.poppins(
+                                color: _homeNavy,
+                                fontSize: constraints.maxWidth < 350 ? 18 : 20,
+                                fontWeight: FontWeight.w700,
+                              )),
+                          const SizedBox(height: 10),
+                          MerchantCategoryCarousel(
+                            selected: _selectedCategory,
+                            onChanged: (category) =>
+                                setState(() => _selectedCategory = category),
+                          ),
+                          const SizedBox(height: 22),
+
                           //
                           // ENCABEZADO COMERCIOS
                           //
@@ -190,7 +222,32 @@ class HomePage extends ConsumerWidget {
                           //
                           // COMERCIOS
                           //
-                          merchants.when(
+                          if (_selectedCategory != null)
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    filteredMerchants.when(
+                                      data: (items) =>
+                                          '${_selectedCategory!.label} · ${items.length} ${items.length == 1 ? 'comercio' : 'comercios'}',
+                                      loading: () => _selectedCategory!.label,
+                                      error: (_, __) =>
+                                          _selectedCategory!.label,
+                                    ),
+                                    style: GoogleFonts.poppins(
+                                        color: _homeSecondary, fontSize: 13),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      setState(() => _selectedCategory = null),
+                                  style: TextButton.styleFrom(
+                                      foregroundColor: const Color(0xFFE00024)),
+                                  child: const Text('Ver todos'),
+                                ),
+                              ],
+                            ),
+                          filteredMerchants.when(
                             data: (items) {
                               if (items.isEmpty) {
                                 return Container(
@@ -206,10 +263,11 @@ class HomePage extends ConsumerWidget {
                                       ),
                                     ),
                                   ),
-                                  child: const EmptyState(
+                                  child: EmptyState(
                                     title: 'Sin comercios',
-                                    message:
-                                        'No hay comercios activos con sucursales disponibles.',
+                                    message: _selectedCategory == null
+                                        ? 'No hay comercios activos con sucursales disponibles.'
+                                        : 'No hay comercios disponibles en esta categoría.',
                                   ),
                                 );
                               }
@@ -219,7 +277,7 @@ class HomePage extends ConsumerWidget {
                                   for (var index = 0;
                                       index < items.length;
                                       index++) ...[
-                                    _MerchantHomeCard(
+                                    MerchantPreviewCard(
                                       merchant: items[index],
                                       onTap: () => Navigator.of(
                                         context,
@@ -346,10 +404,16 @@ class _AddressHomeCard extends StatelessWidget {
       );
 }
 
-class _MerchantHomeCard extends StatelessWidget {
-  const _MerchantHomeCard({required this.merchant, required this.onTap});
+class MerchantPreviewCard extends StatelessWidget {
+  const MerchantPreviewCard(
+      {super.key,
+      required this.merchant,
+      required this.onTap,
+      this.showDescription = false,
+      this.animateLogo = true});
   final Merchant merchant;
   final VoidCallback onTap;
+  final bool showDescription, animateLogo;
 
   @override
   Widget build(BuildContext context) => _HomeCard(
@@ -359,10 +423,12 @@ class _MerchantHomeCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Hero(
-                  tag: 'merchant-avatar-${merchant.id}',
-                  child: _MerchantLogo(merchant: merchant),
-                ),
+                if (animateLogo)
+                  Hero(
+                    tag: 'merchant-avatar-${merchant.id}',
+                    child: _MerchantLogo(merchant: merchant),
+                  ),
+                if (!animateLogo) _MerchantLogo(merchant: merchant),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -377,14 +443,17 @@ class _MerchantHomeCard extends StatelessWidget {
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           )),
-                      const SizedBox(height: 2),
-                      Text('${merchant.branchName} · ${merchant.description}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.poppins(
-                            color: _homeSecondary,
-                            fontSize: 12,
-                          )),
+                      if (showDescription &&
+                          merchant.description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        Text(merchant.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                                color: _homeSecondary,
+                                fontSize: 13,
+                                height: 1.3)),
+                      ],
                     ],
                   ),
                 ),
@@ -1077,9 +1146,9 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F4F4),
+      backgroundColor: const Color(0xFFF6F7FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF4F4F4),
+        backgroundColor: const Color(0xFFF6F7FA),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         toolbarHeight: 74,
@@ -1119,12 +1188,12 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
               height: 42,
               decoration: BoxDecoration(
                 color:
-                    favorite == null ? Colors.white : const Color(0xFFFFE5E5),
+                    favorite == null ? Colors.white : const Color(0xFFFFF0DC),
                 borderRadius: BorderRadius.circular(13),
                 border: Border.all(
                   color: favorite == null
                       ? const Color(0xFFE3E8F0)
-                      : const Color(0xFFFFCACA),
+                      : const Color(0xFFFFD5A3),
                 ),
               ),
               child: IconButton(
@@ -1136,7 +1205,7 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
                   favorite == null
                       ? Icons.favorite_border_rounded
                       : Icons.favorite_rounded,
-                  color: const Color(0xFFFF5A5A),
+                  color: const Color(0xFFFF7C00),
                   size: 22,
                 ),
                 onPressed: favorites.isLoading
@@ -1188,7 +1257,7 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(
               child: CircularProgressIndicator(
-                color: Color(0xFFFF5A5A),
+                color: Color(0xFFFF7C00),
               ),
             );
           }
@@ -1203,7 +1272,7 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
 
           return DecoratedBox(
             decoration: const BoxDecoration(
-              color: Color(0xFFF4F4F4),
+              color: Color(0xFFF6F7FA),
             ),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(
@@ -1213,77 +1282,7 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
                 40,
               ),
               children: [
-                //
-                // Información del comercio
-                //
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: const Color(0xFFE3E8F0),
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x080F1E3A),
-                        blurRadius: 14,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFE5E5),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.storefront_outlined,
-                          color: Color(0xFFFF5A5A),
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              merchant.branchName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.poppins(
-                                color: const Color(0xFF0F1E3A),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (merchant.description.trim().isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                merchant.description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.poppins(
-                                  color: const Color(
-                                    0xFF647185,
-                                  ),
-                                  fontSize: 12,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                MerchantCatalogHeader(merchant: merchant),
 
                 const SizedBox(height: 18),
 
@@ -1294,7 +1293,7 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
                   hintText: 'Buscar en ${merchant.name}',
                   leading: const Icon(
                     Icons.search_rounded,
-                    color: Color(0xFFFF5A5A),
+                    color: Color(0xFFFF7C00),
                   ),
                   hintStyle: const WidgetStatePropertyAll(
                     TextStyle(
@@ -1355,13 +1354,13 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFE5E5),
+                          color: const Color(0xFFFFF0DC),
                           borderRadius: BorderRadius.circular(99),
                         ),
                         child: Text(
                           '${products.length}',
                           style: const TextStyle(
-                            color: Color(0xFFFF5A5A),
+                            color: Color(0xFFFF7C00),
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1390,12 +1389,39 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
                       padding: const EdgeInsets.only(
                         bottom: 12,
                       ),
-                      child: _MerchantProductCard(
+                      child: MerchantCatalogProductCard(
                         product: product,
+                        priceLabel: merchantProductPrice(product),
                         onTap: () async {
-                          final detailedProduct = await ref
-                              .read(customerRepositoryProvider)
-                              .product(product.id);
+                          final repository =
+                              ref.read(customerRepositoryProvider);
+                          Product detailedProduct;
+                          try {
+                            final availability = await repository
+                                .availability(merchant.branchId);
+                            if (!context.mounted) return;
+                            if (!availability.open) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Fuera de horario de atención'),
+                                ),
+                              );
+                              return;
+                            }
+                            detailedProduct =
+                                await repository.product(product.id);
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'No pudimos verificar la disponibilidad. Intenta nuevamente.',
+                                  ),
+                                ),
+                              );
+                            }
+                            return;
+                          }
                           if (!context.mounted) return;
                           final result = await Navigator.of(context).push(
                             MaterialPageRoute<ProductAddedResult>(
@@ -1443,113 +1469,4 @@ String merchantProductPrice(Product product) {
     _ => product.currency,
   };
   return '$symbol ${product.price.toStringAsFixed(2)}';
-}
-
-class _MerchantProductCard extends StatelessWidget {
-  const _MerchantProductCard({required this.product, required this.onTap});
-  final Product product;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: '${product.name}, ${merchantProductPrice(product)}',
-        child: Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Ink(
-              height: 152,
-              decoration: BoxDecoration(
-                border: Border.all(color: _homeDivider),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 6,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 12, 14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            product.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              color: _homeNavy,
-                              fontSize: 16,
-                              height: 1.2,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Expanded(
-                            child: Text(
-                              product.description,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.poppins(
-                                color: _homeSecondary,
-                                fontSize: 12,
-                                height: 1.35,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            merchantProductPrice(product),
-                            style: GoogleFonts.poppins(
-                              color: _homeNavy,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 5,
-                    child: _ProductThumbnail(product: product),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-}
-
-class _ProductThumbnail extends StatelessWidget {
-  const _ProductThumbnail({required this.product});
-  final Product product;
-
-  @override
-  Widget build(BuildContext context) {
-    const fallback = ColoredBox(
-      color: Color(0xFFDBEAFE),
-      child: Center(
-        child: Icon(Icons.restaurant, color: Color(0xFF2563EB), size: 32),
-      ),
-    );
-    final image = product.primaryImage;
-    return ClipRRect(
-      borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
-      child: SizedBox(
-        height: double.infinity,
-        width: double.infinity,
-        child: image == null || image.url.isEmpty
-            ? fallback
-            : CachedNetworkImage(
-                imageUrl: image.url,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => fallback,
-                errorWidget: (_, __, ___) => fallback,
-              ),
-      ),
-    );
-  }
 }

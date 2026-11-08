@@ -3,6 +3,7 @@ package com.delivery.platform.tracking.courier;
 import com.delivery.platform.config.SecurityConfig;
 import com.delivery.platform.identity.security.IdentityPrincipal;
 import com.delivery.platform.identity.security.JwtService;
+import com.delivery.platform.identity.security.IdentityPrincipalLoader;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -25,6 +26,7 @@ class CourierDeliveryRouteSecurityTest {
     @Autowired MockMvc mvc;
     @MockBean CourierDeliveryRouteService service;
     @MockBean JwtService jwt;
+    @MockBean IdentityPrincipalLoader principalLoader;
     private final UUID delivery = UUID.randomUUID(), tenant = UUID.randomUUID();
 
     @Test void unauthenticatedRequestIsUnauthorized() throws Exception {
@@ -33,14 +35,16 @@ class CourierDeliveryRouteSecurityTest {
     }
 
     @Test void customerCannotReadCourierRoute() throws Exception {
-        when(jwt.parse("customer")).thenReturn(principal("CUSTOMER", "DELIVERY_VIEW"));
+        var tokenPrincipal = principal("CUSTOMER", "DELIVERY_VIEW");
+        when(jwt.parse("customer")).thenReturn(tokenPrincipal);
         mvc.perform(get("/api/v1/courier/deliveries/{id}/route", delivery)
                         .header("Authorization", "Bearer customer"))
                 .andExpect(status().isForbidden());
     }
 
     @Test void courierWithDeliveryAccessCanReadAssignedRoute() throws Exception {
-        when(jwt.parse("courier")).thenReturn(principal("COURIER", "DELIVERY_VIEW"));
+        var tokenPrincipal = principal("COURIER", "DELIVERY_VIEW");
+        when(jwt.parse("courier")).thenReturn(tokenPrincipal);
         when(service.get(eq(delivery), any())).thenReturn(null);
         mvc.perform(get("/api/v1/courier/deliveries/{id}/route", delivery)
                         .header("Authorization", "Bearer courier"))
@@ -48,6 +52,8 @@ class CourierDeliveryRouteSecurityTest {
     }
 
     private IdentityPrincipal principal(String role, String permission) {
-        return new IdentityPrincipal(UUID.randomUUID(), tenant, "elite", Set.of(role), Set.of(permission));
+        var principal = new IdentityPrincipal(UUID.randomUUID(), tenant, "elite", Set.of(role), Set.of(permission));
+        when(principalLoader.load(principal.userId(), tenant)).thenReturn(java.util.Optional.of(principal));
+        return principal;
     }
 }

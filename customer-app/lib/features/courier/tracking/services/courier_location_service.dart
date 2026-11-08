@@ -26,7 +26,8 @@ class CourierTrackingConfig {
 enum CourierLocationEventType { captured, sending, sent, offline, error }
 
 class CourierLocationEvent {
-  const CourierLocationEvent(this.type, {this.sentAt, this.message, this.location});
+  const CourierLocationEvent(this.type,
+      {this.sentAt, this.message, this.location});
   final CourierLocationEventType type;
   final DateTime? sentAt;
   final String? message;
@@ -247,14 +248,16 @@ class CourierLocationService implements CourierLocationServiceContract {
             sentAt: _lastSentAt,
           ));
         } catch (error) {
-          final offline=error is AppException && const {
-            'NETWORK_UNAVAILABLE','NETWORK_TIMEOUT'
-          }.contains(error.code);
+          final offline = error is AppException &&
+              const {'NETWORK_UNAVAILABLE', 'NETWORK_TIMEOUT'}
+                  .contains(error.code);
           _events.add(CourierLocationEvent(
-            offline ? CourierLocationEventType.offline : CourierLocationEventType.error,
+            offline
+                ? CourierLocationEventType.offline
+                : CourierLocationEventType.error,
             message: error.toString(),
           ));
-          if(offline) _scheduleRetry();
+          if (offline) _scheduleRetry();
           break;
         }
       }

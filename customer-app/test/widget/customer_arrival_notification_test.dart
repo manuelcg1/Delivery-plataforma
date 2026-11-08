@@ -29,7 +29,8 @@ void main() {
     );
     expect(tester.widget<SnackBar>(find.byType(SnackBar)).behavior,
         SnackBarBehavior.floating);
-    expect(tester.widget<SnackBar>(find.byType(SnackBar)).showCloseIcon, isTrue);
+    expect(
+        tester.widget<SnackBar>(find.byType(SnackBar)).showCloseIcon, isTrue);
     expect(tester.widget<SnackBar>(find.byType(SnackBar)).duration,
         const Duration(seconds: 5));
   });

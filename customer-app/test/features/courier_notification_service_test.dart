@@ -5,7 +5,8 @@ void main() {
   test('notification id is stable and delivery specific', () {
     final first = CourierNotificationService.notificationId('delivery-a');
     expect(first, CourierNotificationService.notificationId('delivery-a'));
-    expect(first, isNot(CourierNotificationService.notificationId('delivery-b')));
+    expect(
+        first, isNot(CourierNotificationService.notificationId('delivery-b')));
     expect(first, greaterThanOrEqualTo(0));
   });
 }

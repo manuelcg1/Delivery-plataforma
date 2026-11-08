@@ -162,8 +162,11 @@ void main() {
     expect(service.active, isFalse);
   });
 
-  test('recovery keeps the explicitly persisted delivery among multiple active deliveries', () async {
-    SharedPreferences.setMockInitialValues({'courier.deliveryId': 'delivery-2'});
+  test(
+      'recovery keeps the explicitly persisted delivery among multiple active deliveries',
+      () async {
+    SharedPreferences.setMockInitialValues(
+        {'courier.deliveryId': 'delivery-2'});
     await controller().restoreFromBackend([
       delivery('delivery-1'),
       delivery('delivery-2'),
@@ -171,13 +174,16 @@ void main() {
     expect(service.startedDeliveryId, 'delivery-2');
   });
 
-  test('recovery does not guess when multiple active deliveries have no persisted selection', () async {
+  test(
+      'recovery does not guess when multiple active deliveries have no persisted selection',
+      () async {
     await controller().restoreFromBackend([
       delivery('delivery-1'),
       delivery('delivery-2'),
     ]);
     expect(service.starts, 0);
-    expect(container.read(courierTrackingControllerProvider), isA<TrackingError>());
+    expect(container.read(courierTrackingControllerProvider),
+        isA<TrackingError>());
   });
 }
 

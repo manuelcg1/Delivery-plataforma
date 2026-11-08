@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 import com.delivery.platform.config.SecurityConfig;
 import com.delivery.platform.identity.security.JwtService;
+import com.delivery.platform.identity.security.IdentityPrincipalLoader;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PublicHealthControllerTest {
     @Autowired MockMvc mockMvc;
     @MockBean JwtService jwtService;
+    @MockBean IdentityPrincipalLoader principalLoader;
 
     @Test
     void returnsHealth() throws Exception {

@@ -28,6 +28,7 @@ class MerchantOrderOptionsTest {
     private MerchantPortalService service;
     private IdentityPrincipal principal;
     private String postgresSchema;
+    private javax.sql.DataSource dataSource;
 
     @BeforeEach void setup() {
         // Optional PostgreSQL run against a dedicated test database; every test owns its schema.
@@ -37,29 +38,63 @@ class MerchantOrderOptionsTest {
             source = new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;NON_KEYWORDS=USER", "sa", "");
         } else {
             postgresSchema = "order_options_" + UUID.randomUUID().toString().replace("-", "");
-            source = new DriverManagerDataSource(postgresUrl, "postgres", "");
+            source = new DriverManagerDataSource(postgresUrl,
+                System.getenv().getOrDefault("MERCHANT_TEST_DB_USER", "postgres"),
+                System.getenv().getOrDefault("MERCHANT_TEST_DB_PASSWORD", ""));
             JdbcClient.create(source).sql("create schema " + postgresSchema).update();
             var properties = new java.util.Properties();
             properties.setProperty("currentSchema", postgresSchema);
             source.setConnectionProperties(properties);
         }
+        dataSource = source;
         new ResourceDatabasePopulator(new ClassPathResource("merchant-order-options.sql")).execute(source);
         db = JdbcClient.create(source);
         service = new MerchantPortalService(db, mock(RealtimeGateway.class));
         principal = new IdentityPrincipal(user, tenant, "test", Set.of("MERCHANT_OPERATOR"), Set.of("MERCHANT_ORDERS_VIEW"));
-        db.sql("insert into merchants values (?,?)").params(merchant, tenant).update();
+        db.sql("insert into merchants(id,tenant_id) values (?,?)").params(merchant, tenant).update();
         db.sql("insert into branches values (?,?,?,?)").params(branch, tenant, merchant, "Centro").update();
-        db.sql("insert into users values (?,?,?)").params(customer, "Cliente", "Prueba").update();
+        db.sql("insert into users(id,first_name,last_name,tenant_id,phone) values (?,?,?,?,?)")
+            .params(customer, "Cliente", "Prueba", tenant, "+51912345678").update();
         db.sql("insert into delivery_addresses values (?,?,?,?)").params(address, "999999999", "Calle 1", "Centro").update();
         UUID membership = UUID.randomUUID();
         db.sql("insert into merchant_memberships values (?,?,?,?,true)").params(membership, tenant, merchant, user).update();
         db.sql("insert into merchant_branch_assignments values (?,?)").params(membership, branch).update();
     }
 
-    @AfterEach void cleanup() {
+    @AfterEach void cleanup() throws java.sql.SQLException {
         if (db == null) return;
-        if (postgresSchema == null) db.sql("SHUTDOWN").update();
+        if (postgresSchema == null) {
+            // H2 closes the connection on SHUTDOWN; JdbcTemplate may subsequently read warnings
+            // from that closed connection when another test enabled debug logging.
+            try (var connection=dataSource.getConnection(); var statement=connection.createStatement()) {
+                statement.execute("SHUTDOWN");
+            }
+        }
         else db.sql("drop schema " + postgresSchema + " cascade").update();
+    }
+
+    @Test void accountPhoneIsReturnedInListAndDetailWithoutReplacingDeliveryPhone() {
+        UUID id = order(tenant, merchant, branch, "011");
+        JsonNode detail = json.valueToTree(service.order(principal, id));
+        assertEquals("+51912345678", detail.path("order").path("customerPhone").asText());
+        assertEquals("999999999", detail.path("phone").asText());
+        JsonNode row = json.valueToTree(service.orders(principal, merchant, branch, null, null, 0, 20).content().get(0));
+        assertEquals("+51912345678", row.path("customerPhone").asText());
+    }
+
+    @Test void previousCustomerWithoutPhoneRemainsReadable() {
+        UUID id = order(tenant, merchant, branch, "012");
+        db.sql("update users set phone=null where id=?").param(customer).update();
+        JsonNode detail = json.valueToTree(service.order(principal, id));
+        assertTrue(detail.path("order").path("customerPhone").isNull());
+        assertEquals("999999999", detail.path("phone").asText());
+    }
+
+    @Test void contactFromAnotherTenantCannotBeExposedThroughCorruptOrder() {
+        UUID id = order(tenant, merchant, branch, "013");
+        db.sql("update users set tenant_id=? where id=?").params(UUID.randomUUID(),customer).update();
+        assertThrows(ApiException.class, () -> service.order(principal, id));
+        assertTrue(service.orders(principal, merchant, branch, null, null, 0, 20).content().isEmpty());
     }
 
     @Test void detailPreservesHistoricalOptionsAndSeparatesSameProductSelections() {
@@ -103,7 +138,7 @@ class MerchantOrderOptionsTest {
         item(tenant, forbidden, 1, "10", "10", "Privado");
         order(UUID.randomUUID(), merchant, branch, "004");
         UUID otherMerchant = UUID.randomUUID();
-        db.sql("insert into merchants values (?,?)").params(otherMerchant, tenant).update();
+        db.sql("insert into merchants(id,tenant_id) values (?,?)").params(otherMerchant, tenant).update();
         order(tenant, otherMerchant, branch, "005");
 
         var page = service.orders(principal, merchant, null, null, null, 0, 1);
@@ -123,7 +158,7 @@ class MerchantOrderOptionsTest {
     @Test void detailRejectsAnotherTenantMerchantAndUnassignedBranch() {
         assertThrows(ApiException.class, () -> service.order(principal, order(UUID.randomUUID(), merchant, branch, "001")));
         UUID otherMerchant = UUID.randomUUID();
-        db.sql("insert into merchants values (?,?)").params(otherMerchant, tenant).update();
+        db.sql("insert into merchants(id,tenant_id) values (?,?)").params(otherMerchant, tenant).update();
         assertThrows(ApiException.class, () -> service.order(principal, order(tenant, otherMerchant, branch, "002")));
         UUID otherBranch = UUID.randomUUID();
         db.sql("insert into branches values (?,?,?,?)").params(otherBranch, tenant, merchant, "Privada").update();

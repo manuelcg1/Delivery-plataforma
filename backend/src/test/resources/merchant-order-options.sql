@@ -1,6 +1,6 @@
-CREATE TABLE merchants(id UUID PRIMARY KEY, tenant_id UUID);
+CREATE TABLE merchants(id UUID PRIMARY KEY, tenant_id UUID, status VARCHAR DEFAULT 'ACTIVE');
 CREATE TABLE branches(id UUID PRIMARY KEY, tenant_id UUID, merchant_id UUID, name VARCHAR);
-CREATE TABLE users(id UUID PRIMARY KEY, first_name VARCHAR, last_name VARCHAR);
+CREATE TABLE users(id UUID PRIMARY KEY, first_name VARCHAR, last_name VARCHAR, tenant_id UUID, phone VARCHAR);
 CREATE TABLE merchant_memberships(id UUID PRIMARY KEY, tenant_id UUID, merchant_id UUID, user_id UUID, active BOOLEAN);
 CREATE TABLE merchant_branch_assignments(membership_id UUID, branch_id UUID);
 CREATE TABLE delivery_addresses(id UUID PRIMARY KEY, phone VARCHAR, address_line VARCHAR, district VARCHAR);

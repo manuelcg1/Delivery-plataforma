@@ -11,13 +11,23 @@ public final class AuthDtos {private AuthDtos(){}
  public record Login(
    @NotBlank(message="Ingresa el correo o nombre de usuario") String email,
    @NotBlank(message="Ingresa la contraseña") String password,
-   @NotBlank(message="Ingresa el código de la empresa") String tenantCode){}
+   String tenantCode){}
+ public record SwitchContext(@NotBlank String tenantCode){}
  public record RegisterCustomer(
    @NotBlank(message="Ingresa el código de la empresa") String tenantCode,
    @NotBlank(message="Ingresa tu nombre") @Size(max=100) String firstName,
    @NotBlank(message="Ingresa tu apellido") @Size(max=100) String lastName,
    @Email(message="Ingresa un correo electrónico válido") @NotBlank(message="Ingresa tu correo electrónico") String email,
    @Size(min=10,message="La contraseña debe tener al menos 10 caracteres") @NotBlank(message="Ingresa una contraseña") String password){}
+ public enum MobileProfile { CUSTOMER, COURIER }
+ public record RegisterMobile(
+   @NotBlank(message="Ingresa tu nombre") @Size(max=100,message="Usa un nombre de hasta 100 caracteres") String firstName,
+   @NotBlank(message="Ingresa tu apellido") @Size(max=100,message="Usa un apellido de hasta 100 caracteres") String lastName,
+   @Email(message="Ingresa un correo electrónico válido") @NotBlank(message="Ingresa tu correo electrónico") String email,
+   @Size(min=10,message="La contraseña debe tener al menos 10 caracteres") @NotBlank(message="Ingresa una contraseña") String password,
+   @NotBlank(message="Ingresa tu teléfono o WhatsApp") @Size(max=40,message="Ingresa un número de teléfono válido") String phone,
+   @NotNull(message="Elige Cliente o Repartidor") MobileProfile profile){}
+ public record PendingApproval(boolean pendingApproval,String message){}
  public record Refresh(String refreshToken){} public record Forgot(@NotBlank String tenantCode,@Email @NotBlank String email){}
  public record ChangePassword(@NotBlank String currentPassword,@Size(min=10) @NotBlank String newPassword){}
  public record Reset(@NotBlank String token,@Size(min=10) @NotBlank String newPassword){}

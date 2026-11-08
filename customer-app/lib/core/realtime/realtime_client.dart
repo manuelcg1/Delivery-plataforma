@@ -131,7 +131,7 @@ class RealtimeClient {
         onStompError: (_) => _states.add(RealtimeConnectionState.error),
       ),
     );
-    _client=connection;
+    _client = connection;
     connection.activate();
   }
 
@@ -157,8 +157,9 @@ class RealtimeClient {
   }
 
   void _subscribeKey(String key, String destination) {
-    final connection=_client;
-    if (!_connected || connection==null || _unsubscribers.containsKey(key)) return;
+    final connection = _client;
+    if (!_connected || connection == null || _unsubscribers.containsKey(key))
+      return;
     _unsubscribers[key] = connection.subscribe(
       destination: destination,
       callback: (frame) {
@@ -189,16 +190,16 @@ class RealtimeClient {
   }
 
   Future<void> reconnect() async {
-    if(_destinations.isEmpty) return;
-    _manualDisconnect=true;
+    if (_destinations.isEmpty) return;
+    _manualDisconnect = true;
     _reconnectTimer?.cancel();
-    _reconnectTimer=null;
-    final stale=_client;
-    _client=null;
-    _connected=false;
+    _reconnectTimer = null;
+    final stale = _client;
+    _client = null;
+    _connected = false;
     _unsubscribers.clear();
     stale?.deactivate();
-    _manualDisconnect=false;
+    _manualDisconnect = false;
     await _ensureConnected();
   }
 
