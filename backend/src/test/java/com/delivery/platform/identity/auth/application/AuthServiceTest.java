@@ -26,4 +26,13 @@ class AuthServiceTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> AuthService.normalizeMobilePhone(null))
             .isInstanceOf(com.delivery.platform.common.ApiException.class);
     }
+    @Test void resetEmailUsesExplicitConfiguredSender() {
+        var service = new AuthService(null,null,null,null,null,null);
+        service.mailFrom = "notificaciones@cerka.site";
+        service.frontendUrl = "https://admin.example.test";
+        var message = service.resetMessage("customer@example.test", "test-token");
+        assertThat(message.getFrom()).isEqualTo("notificaciones@cerka.site");
+        assertThat(message.getTo()).containsExactly("customer@example.test");
+        assertThat(message.getText()).contains("https://admin.example.test/reset-password?token=test-token");
+    }
 }
