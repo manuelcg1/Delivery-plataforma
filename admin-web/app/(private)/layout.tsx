@@ -42,8 +42,8 @@ export default function Private({ children }: { children: React.ReactNode }) {
   return <main className="shell"><aside className="sidebar"><div className="brand"><span>D</span><div>Delivery<strong>Platform</strong></div></div>
     {owner && <label className="tenant-context">Contexto operativo<select aria-label="Contexto operativo" value={operationalContext ? user.tenant.code : 'platform'} onChange={event => { void switchTenant(event.target.value); }}><option value="platform">Plataforma</option>{tenants.map(tenant => <option key={tenant.id} value={tenant.code}>{tenant.name}</option>)}</select></label>}
     <nav>
-      {owner && <><small className="nav-title">ADMINISTRACIÓN GLOBAL</small><Link href="/platform">Resumen global</Link><Link href="/platform/orders">Pedidos globales</Link><Link href="/platform/merchants">Comercios</Link><Link href="/platform/customers">Clientes</Link><Link href="/platform/couriers">Repartidores</Link><Link href="/platform/transactions">Transacciones</Link><Link href="/platform/settings">Configuración</Link></>}
-      {owner ? operationalContext && operationalNavigation : operationalNavigation}
+      {owner && <><small className="nav-title">ADMINISTRACIÓN GLOBAL</small><Link href="/platform">Resumen global</Link><Link href="/platform/orders">Pedidos globales</Link><Link href="/platform/merchants">Comercios globales</Link><Link href="/platform/customers">Clientes</Link><Link href="/platform/couriers">Repartidores</Link><Link href="/platform/transactions">Transacciones</Link><Link href="/platform/settings">Configuración</Link></>}
+      {operationalNavigation}
       <Link href="/profile">Perfil</Link>
     </nav><button className="secondary" onClick={logout}>Cerrar sesión</button></aside><section className="content">{children}</section></main>;
 }
