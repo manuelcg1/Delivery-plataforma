@@ -52,6 +52,16 @@ class CatalogSupportTest {
     }
 
     @Test
+    void platformOwnerAccessesCurrentTenantCatalogButNotAnotherTenant() {
+        var owner = new IdentityPrincipal(UUID.randomUUID(), tenant, "platform",
+                Set.of("ROLE_PLATFORM_OWNER"), Set.of());
+        assertDoesNotThrow(() -> support.merchant(owner, secondMerchant));
+        UUID foreignMerchant = UUID.randomUUID();
+        db.sql("insert into merchants values (?,?)").params(foreignMerchant, UUID.randomUUID()).update();
+        assertThrows(ApiException.class, () -> support.merchant(owner, foreignMerchant));
+    }
+
+    @Test
     void operatorCannotReadAnotherMerchantsProductInSameTenant() {
         UUID product = UUID.randomUUID();
         db.sql("insert into products values (:id,:tenant,:merchant)")

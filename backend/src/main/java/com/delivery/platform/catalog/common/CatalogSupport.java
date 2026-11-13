@@ -12,7 +12,7 @@ import java.util.UUID;
 
 @Component
 public class CatalogSupport {
-	private static final Set<String> TENANT_WIDE_ROLES = Set.of("TENANT_ADMIN", "PLATFORM_ADMIN");
+	private static final Set<String> TENANT_WIDE_ROLES = Set.of("TENANT_ADMIN", "PLATFORM_ADMIN", "ROLE_PLATFORM_OWNER");
 	private final JdbcClient db;
 	private final CatalogCache cache;
 
