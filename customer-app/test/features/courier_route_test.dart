@@ -67,37 +67,57 @@ void main() {
       'etaMinutes': 8,
     });
     (double, double)? destination;
+    String? called;
+    var chatted = false;
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: SingleChildScrollView(
           child: CourierOrderCard(
             route: route,
+            onChat: () => chatted = true,
             navigationLauncher: (latitude, longitude) async {
               destination = (latitude, longitude);
               return 'Google Maps';
+            },
+            phoneLauncher: (phone) async {
+              called = phone;
+              return true;
             },
           ),
         ),
       ),
     ));
 
-    expect(find.text('Pedido'), findsOneWidget);
+    // Cabecera compacta: número y estado; el cliente aparece una sola vez.
     expect(find.text('CERKA-2485'), findsOneWidget);
-    expect(find.text('María Torres'), findsNWidgets(2));
-    expect(find.text('Ir al destino'), findsOneWidget);
-    expect(find.byTooltip('Contraer pedido'), findsOneWidget);
+    expect(find.text('En camino'), findsWidgets);
+    expect(find.text('María Torres'), findsOneWidget);
+    expect(find.text('2.4 km · 8 min'), findsOneWidget);
+    expect(find.text('Ref.: Departamento 302'), findsOneWidget);
 
-    await tester.tap(find.text('Pedido'));
-    await tester.pumpAndSettle();
+    // "Ir al destino" y "Chatear" comparten la fila.
+    expect(tester.getCenter(find.text('Ir al destino del cliente')).dy,
+        tester.getCenter(find.text('Chatear')).dy);
 
-    expect(find.byTooltip('Expandir pedido'), findsOneWidget);
-    expect(find.text('Ir al destino'), findsOneWidget);
-
-    await tester.tap(find.text('Ir al destino'));
+    await tester.tap(find.text('Ir al destino del cliente'));
     await tester.pump();
-
     expect(destination, (-12.2, -77.2));
+
+    await tester.tap(find.byTooltip('Llamar al cliente'));
+    await tester.pump();
+    expect(called, '+51 987 654 321');
+
+    await tester.tap(find.text('Chatear'));
+    expect(chatted, isTrue);
+  });
+
+  test('el progreso horizontal sigue el estado de la entrega', () {
+    expect(courierProgressRank('ASSIGNED'), 0);
+    expect(courierProgressRank('ARRIVED_AT_MERCHANT'), 1);
+    expect(courierProgressRank('IN_TRANSIT'), 3);
+    expect(courierProgressRank('ARRIVED_AT_CUSTOMER'), 4);
+    expect(courierStatusLabel('ARRIVED_AT_CUSTOMER'), 'Llegaste');
   });
 
   testWidgets('aceptado muestra comercio y abre la ubicación de recojo',
@@ -141,9 +161,23 @@ void main() {
     await tester.pump();
     expect(opened.single, (-8.1116, -79.0288));
 
-    await tester.tap(find.text('Ir al destino'));
-    await tester.pump();
-    expect(opened.last, (-8.125, -79.038));
+    // Aún no está "En camino": no se puede navegar al cliente.
+    expect(find.text('Ir al destino del cliente'), findsNothing);
+    expect(opened, hasLength(1));
+  });
+
+  test('solo "En camino" habilita ir al destino del cliente', () {
+    expect(canNavigateToCustomer('IN_TRANSIT'), isTrue);
+    for (final status in [
+      'ASSIGNED',
+      'ACCEPTED',
+      'ARRIVED_AT_MERCHANT',
+      'PICKED_UP',
+      'ARRIVED_AT_CUSTOMER',
+      'DELIVERED',
+    ]) {
+      expect(canNavigateToCustomer(status), isFalse, reason: status);
+    }
   });
 
   testWidgets('asignado oculta comercio y dirección sin coordenadas no enlaza',

@@ -160,10 +160,25 @@ class Order {
     required this.currency,
     required this.createdAt,
     required this.ratingSubmitted,
+    this.deliveryCode,
+    this.history = const [],
+    this.items = const [],
+    this.subtotal,
+    this.deliveryFee,
   });
   final String id, number, status, currency, createdAt;
   final double total;
+  final double? subtotal, deliveryFee;
   final bool ratingSubmitted;
+
+  /// Productos del pedido con sus opciones y notas.
+  final List<OrderLineItem> items;
+
+  /// Código secreto que el cliente dicta al repartidor al recibir el pedido.
+  final String? deliveryCode;
+
+  /// Cambios de estado del pedido (creado, aceptado, en preparación, …).
+  final List<OrderHistoryEntry> history;
   factory Order.fromJson(Map<String, dynamic> j) => Order(
         id: j['id'] as String,
         number: j['orderNumber'] as String,
@@ -172,7 +187,71 @@ class Order {
         currency: j['currency'] as String,
         createdAt: j['createdAt'] as String,
         ratingSubmitted: j['ratingSubmitted'] as bool? ?? false,
+        deliveryCode: j['deliveryCode'] as String?,
+        history: (j['history'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .where((item) =>
+                item['status'] is String && item['createdAt'] is String)
+            .map(OrderHistoryEntry.fromJson)
+            .toList(),
+        items: (j['items'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(OrderLineItem.fromJson)
+            .toList(),
+        subtotal: (j['subtotal'] as num?)?.toDouble(),
+        deliveryFee: (j['deliveryFee'] as num?)?.toDouble(),
       );
+}
+
+/// Producto de un pedido (cliente o repartidor). Los precios son opcionales:
+/// el repartidor recibe solo cantidades, opciones y notas.
+class OrderLineItem {
+  const OrderLineItem({
+    required this.productName,
+    required this.quantity,
+    this.subtotal,
+    this.options = const [],
+    this.notes,
+  });
+  final String productName;
+  final int quantity;
+  final double? subtotal;
+  final List<OrderLineOption> options;
+  final String? notes;
+
+  factory OrderLineItem.fromJson(Map<String, dynamic> json) => OrderLineItem(
+        productName: json['productName']?.toString() ?? 'Producto',
+        quantity: (json['quantity'] as num?)?.toInt() ?? 1,
+        subtotal: (json['subtotal'] as num?)?.toDouble(),
+        options: (json['options'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(OrderLineOption.fromJson)
+            .toList(),
+        notes: json['notes']?.toString(),
+      );
+}
+
+class OrderLineOption {
+  const OrderLineOption(
+      {required this.groupName, required this.itemName, this.priceAdjustment});
+  final String groupName, itemName;
+  final double? priceAdjustment;
+
+  factory OrderLineOption.fromJson(Map<String, dynamic> json) =>
+      OrderLineOption(
+        groupName: json['groupName']?.toString() ?? '',
+        itemName: json['itemName']?.toString() ?? '',
+        priceAdjustment: (json['priceAdjustment'] as num?)?.toDouble(),
+      );
+}
+
+class OrderHistoryEntry {
+  const OrderHistoryEntry({required this.status, required this.createdAt});
+  final String status, createdAt;
+  factory OrderHistoryEntry.fromJson(Map<String, dynamic> json) =>
+      OrderHistoryEntry(
+          status: json['status'] as String,
+          createdAt: json['createdAt'] as String);
 }
 
 bool canRateOrder(Order order, {String? currentStatus}) =>
@@ -184,14 +263,23 @@ class ChatMessage {
       required this.deliveryId,
       required this.senderType,
       required this.message,
-      required this.createdAt});
+      required this.createdAt,
+      this.readAt});
   final String id, deliveryId, senderType, message, createdAt;
+
+  /// Momento en que la otra persona lo leyó; `null` si sigue sin leer.
+  final String? readAt;
+
+  bool unreadFor(String viewerType) =>
+      senderType != viewerType && readAt == null;
+
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
       id: json['id'] as String,
       deliveryId: json['deliveryId'] as String,
       senderType: json['senderType'] as String,
       message: json['message'] as String,
-      createdAt: json['createdAt'] as String);
+      createdAt: json['createdAt'] as String,
+      readAt: json['readAt'] as String?);
 }
 
 class CustomerNotification {
@@ -415,6 +503,18 @@ class CommerceRepository {
     return response.data!
         .map((item) => ChatMessage.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<int> unreadMessages(String deliveryId) async {
+    final response = await api.dio.get<Map<String, dynamic>>(
+        '/api/v1/chat/unread',
+        queryParameters: {'deliveryId': deliveryId});
+    return (response.data?['count'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<void> markMessagesRead(String deliveryId) async {
+    await api.dio.post<Map<String, dynamic>>('/api/v1/chat/read',
+        data: {'deliveryId': deliveryId});
   }
 
   Future<ChatMessage> sendMessage(String deliveryId, String message) async {

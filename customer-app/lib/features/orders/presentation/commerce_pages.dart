@@ -15,7 +15,10 @@ import '../../auth/presentation/auth_controller.dart';
 import '../data/commerce_repository.dart';
 import '../data/yape_checkout.dart';
 import 'yape_checkout_sheet.dart';
+import '../../chat/presentation/delivery_chat_page.dart';
 import 'order_detail_widgets.dart';
+import 'order_products.dart';
+import 'order_progress.dart';
 import '../../customer_tracking/presentation/customer_order_tracking_page.dart';
 import '../../customer_tracking/presentation/customer_tracking_controller.dart';
 import '../../address/presentation/customer_address_form_page.dart';
@@ -1514,6 +1517,8 @@ class _CheckoutPageState extends ConsumerState<CheckoutPage>
       }
       ref.invalidate(cartProvider);
       ref.invalidate(ordersProvider);
+      final code = createdOrder.deliveryCode;
+      if (mounted && code != null) await showDeliveryCodeNotice(context, code);
       if (mounted) {
         ref.read(customerMainTabProvider.notifier).state =
             customerOrdersTabIndex;
@@ -2235,6 +2240,29 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
   String? realtimeStatus;
   late bool ratingSubmitted = widget.order.ratingSubmitted;
 
+  /// Mensajes del repartidor sin leer (aviso sobre "Chatear").
+  int chatUnread = 0;
+
+  Future<void> _refreshUnread(String deliveryId) async {
+    try {
+      final count =
+          await ref.read(commerceRepositoryProvider).unreadMessages(deliveryId);
+      if (mounted && count != chatUnread) setState(() => chatUnread = count);
+    } catch (_) {
+      // El aviso se vuelve a consultar en el próximo refresco.
+    }
+  }
+
+  Future<void> _openChat(String deliveryId) async {
+    await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+            builder: (_) => ChatPage(deliveryId: deliveryId)));
+    if (!mounted) return;
+    setState(() => chatUnread = 0);
+    unawaited(_refreshUnread(deliveryId));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2273,6 +2301,10 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
     if (status != null && !shouldPollOrderDetail(status)) {
       _stopUpdates();
     }
+    final deliveryId = result['deliveryId']?.toString();
+    if (deliveryId != null && status != null && isDeliveryChatOpen(status)) {
+      unawaited(_refreshUnread(deliveryId));
+    }
     return result;
   }
 
@@ -2305,60 +2337,80 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
             final currentStatus = realtimeStatus ??
                 snapshot.data?['status']?.toString() ??
                 order.status;
-            return ListView(padding: const EdgeInsets.all(20), children: [
+            final progress = customerOrderProgress(
+              orderStatus: order.status,
+              deliveryStatus:
+                  realtimeStatus ?? snapshot.data?['status']?.toString(),
+              history: order.history,
+            );
+            final currentStep = progress.lastWhere((step) => step.done,
+                orElse: () => progress.first);
+            final showCode = order.deliveryCode != null &&
+                !terminalDeliveryStatuses.contains(currentStatus);
+            Widget? products(Color? color) => order.items.isEmpty
+                ? null
+                : OrderProductsSummaryRow(
+                    items: order.items,
+                    color: color,
+                    onView: () => showOrderProductsSheet(
+                      context,
+                      orderNumber: order.number,
+                      items: order.items,
+                      currency: order.currency,
+                      total: order.total,
+                      subtotal: order.subtotal,
+                      deliveryFee: order.deliveryFee,
+                    ),
+                  );
+            return ListView(padding: const EdgeInsets.all(16), children: [
               OrderDetailSummary(
                 number: order.number,
-                statusLabel: _deliveryStatusLabel(currentStatus),
+                statusLabel: currentStep.title,
                 currency: order.currency,
                 total: order.total,
+                // Sin tarjeta de código, el resumen va en la del pedido.
+                footer: showCode ? null : products(null),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              if (showCode) ...[
+                DeliveryCodeCard(
+                  code: order.deliveryCode!,
+                  footer: products(DeliveryCodeCard.inkOf(context)),
+                ),
+                const SizedBox(height: 8),
+              ],
               if (snapshot.connectionState != ConnectionState.done)
-                const LinearProgressIndicator()
-              else if (snapshot.hasError)
-                const Card(
-                    child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text(
-                            'El tracking estará disponible cuando exista una entrega.'))),
+                const LinearProgressIndicator(),
               if (deliveryId != null &&
                   !terminalDeliveryStatuses.contains(currentStatus))
                 RealtimeStatusBanner(
                   deliveryId: deliveryId,
                   onOrderUpdated: (status) => refresh(status),
-                ),
-              if (deliveryId != null)
-                _CustomerDeliveryTimeline(
-                  deliveryId: deliveryId,
-                  currentStatus: currentStatus,
+                  onChatMessage: () => _refreshUnread(deliveryId),
                 ),
               if (snapshot.connectionState == ConnectionState.done &&
                   !snapshot.hasError)
                 OrderCourierInfo(
                     name: snapshot.data?['courierName']?.toString() ??
                         'Por asignar'),
-              const SizedBox(height: 12),
-              if (trackableDeliveryStatuses.contains(currentStatus))
-                FilledButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => CustomerOrderTrackingPage(
-                        orderId: order.id,
-                        orderNumber: order.number,
-                      ),
-                    ),
-                  ),
-                  icon: const Icon(Icons.map_outlined),
-                  label: const Text('Seguir pedido'),
-                ),
-              OrderCourierChatButton(
-                  status: currentStatus,
-                  deliveryId: deliveryId,
-                  onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                          builder: (_) => ChatPage(deliveryId: deliveryId!)))),
+              const SizedBox(height: 8),
+              OrderDetailActions(
+                onTrack: trackableDeliveryStatuses.contains(currentStatus)
+                    ? () => Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => CustomerOrderTrackingPage(
+                              orderId: order.id,
+                              orderNumber: order.number,
+                            ),
+                          ),
+                        )
+                    : null,
+                onChat: canChatWithCourier(currentStatus, deliveryId)
+                    ? () => _openChat(deliveryId!)
+                    : null,
+                chatUnread: chatUnread,
+              ),
               if (canRateOrder(order, currentStatus: currentStatus) &&
                   !ratingSubmitted)
                 FilledButton.icon(
@@ -2380,6 +2432,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                   leading: Icon(Icons.check_circle_outline),
                   title: Text('Calificación enviada'),
                 ),
+              OrderProgressTimeline(steps: progress),
             ]);
           },
         ));
@@ -2391,9 +2444,13 @@ class RealtimeStatusBanner extends ConsumerStatefulWidget {
     super.key,
     required this.deliveryId,
     required this.onOrderUpdated,
+    this.onChatMessage,
   });
   final String deliveryId;
   final ValueChanged<String?> onOrderUpdated;
+
+  /// Llega un mensaje nuevo del chat: actualiza el aviso del botón.
+  final VoidCallback? onChatMessage;
   @override
   ConsumerState<RealtimeStatusBanner> createState() =>
       _RealtimeStatusBannerState();
@@ -2417,6 +2474,10 @@ class _RealtimeStatusBannerState extends ConsumerState<RealtimeStatusBanner> {
           final nextStatus = event.payload['status']?.toString();
           if (nextStatus != null || event.type == 'DeliveryStatusChanged') {
             widget.onOrderUpdated(nextStatus);
+          }
+          if (event.type == 'ChatMessageReceived' &&
+              event.payload['senderType'] != 'CUSTOMER') {
+            widget.onChatMessage?.call();
           }
         }
       });
@@ -2458,75 +2519,6 @@ class _RealtimeStatusBannerState extends ConsumerState<RealtimeStatusBanner> {
           ])));
 }
 
-class _CustomerDeliveryTimeline extends ConsumerWidget {
-  const _CustomerDeliveryTimeline({
-    required this.deliveryId,
-    required this.currentStatus,
-  });
-  final String deliveryId;
-  final String currentStatus;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) => Card(
-        margin: const EdgeInsets.symmetric(vertical: 12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Icon(Icons.timeline,
-                    color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: Text('Seguimiento de tu pedido',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700))),
-              ]),
-              const SizedBox(height: 4),
-              Text('Historial de actualizaciones',
-                  style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 12),
-              FutureBuilder<List<DeliveryStatusEvent>>(
-                future: ref
-                    .read(commerceRepositoryProvider)
-                    .deliveryHistory(deliveryId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const LinearProgressIndicator();
-                  }
-                  final events = snapshot.data ?? const <DeliveryStatusEvent>[];
-                  if (events.isEmpty) {
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const CircleAvatar(
-                        radius: 14,
-                        child: Icon(Icons.check, size: 16),
-                      ),
-                      title: Text(_deliveryStatusLabel(currentStatus)),
-                      subtitle: const Text('Actualizado en tiempo real'),
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (var i = 0; i < events.length; i++)
-                        OrderTimelineEntry(
-                          title: _deliveryStatusLabel(events[i].status),
-                          date: _orderDate(events[i].createdAt),
-                          last: i == events.length - 1,
-                        )
-                    ],
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      );
-}
-
 String _deliveryStatusLabel(String status) =>
     const {
       'PENDING': 'Pedido creado',
@@ -2548,65 +2540,18 @@ class ChatPage extends ConsumerStatefulWidget {
 }
 
 class _ChatPageState extends ConsumerState<ChatPage> {
-  final input = TextEditingController();
-  late Future<List<ChatMessage>> messages;
   @override
-  void initState() {
-    super.initState();
-    messages = ref.read(commerceRepositoryProvider).messages(widget.deliveryId);
+  Widget build(BuildContext context) {
+    final repository = ref.read(commerceRepositoryProvider);
+    return DeliveryChatPage(
+      title: 'Chat con el repartidor',
+      viewerType: 'CUSTOMER',
+      load: () => repository.messages(widget.deliveryId),
+      send: (text) => repository.sendMessage(widget.deliveryId, text),
+      markRead: () => repository.markMessagesRead(widget.deliveryId),
+      errorMessage: repository.errorMessage,
+    );
   }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(title: const Text('Chat de la entrega')),
-      body: Column(children: [
-        Expanded(
-            child: FutureBuilder<List<ChatMessage>>(
-                future: messages,
-                builder: (context, snapshot) {
-                  final items = snapshot.data ?? [];
-                  return ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: items
-                          .map((item) => Align(
-                              alignment: item.senderType == 'CUSTOMER'
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: Card(
-                                  color: item.senderType == 'CUSTOMER'
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer
-                                      : null,
-                                  child: Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Text(item.message)))))
-                          .toList());
-                })),
-        SafeArea(
-            child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(children: [
-                  Expanded(
-                      child: TextField(
-                          controller: input,
-                          decoration: const InputDecoration(
-                              hintText: 'Escribe un mensaje'))),
-                  IconButton(
-                      icon: const Icon(Icons.send),
-                      onPressed: () async {
-                        final text = input.text.trim();
-                        if (text.isEmpty) return;
-                        await ref
-                            .read(commerceRepositoryProvider)
-                            .sendMessage(widget.deliveryId, text);
-                        input.clear();
-                        setState(() => messages = ref
-                            .read(commerceRepositoryProvider)
-                            .messages(widget.deliveryId));
-                      })
-                ])))
-      ]));
 }
 
 class RatingDialog extends ConsumerStatefulWidget {

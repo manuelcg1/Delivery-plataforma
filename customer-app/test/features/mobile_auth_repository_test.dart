@@ -39,6 +39,7 @@ void main() {
     api.dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       expect(options.path, '/api/v1/auth/register-mobile');
       expect(options.data, {
+        'acceptedLegalVersion': '2026-11-21',
         'firstName': 'Ana',
         'lastName': 'Perez',
         'email': 'ana@example.com',

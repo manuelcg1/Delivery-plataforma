@@ -1136,6 +1136,12 @@ class MerchantPage extends ConsumerStatefulWidget {
 class _MerchantPageState extends ConsumerState<MerchantPage> {
   String query = '';
 
+  /// Se pide una sola vez: si se creara en build, cada letra escrita en el
+  /// buscador volvería a consultar al servidor, mostraría la carga en lugar
+  /// del buscador y cerraría el teclado.
+  late Future<List<Product>> products =
+      ref.read(customerRepositoryProvider).products(widget.merchant.branchId);
+
   @override
   Widget build(BuildContext context) {
     final merchant = widget.merchant;
@@ -1251,8 +1257,7 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
         ],
       ),
       body: FutureBuilder<List<Product>>(
-        future:
-            ref.read(customerRepositoryProvider).products(merchant.branchId),
+        future: products,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(
@@ -1452,13 +1457,26 @@ class _MerchantPageState extends ConsumerState<MerchantPage> {
   }
 }
 
+/// Minúsculas y sin tildes: "cafe" encuentra "Café" y "pina" encuentra "Piña".
+String normalizeSearchText(String value) {
+  const from = 'áàäâéèëêíìïîóòöôúùüûñ';
+  const to = 'aaaaeeeeiiiioooouuuun';
+  final lower = value.toLowerCase();
+  final buffer = StringBuffer();
+  for (final char in lower.split('')) {
+    final index = from.indexOf(char);
+    buffer.write(index < 0 ? char : to[index]);
+  }
+  return buffer.toString();
+}
+
 List<Product> filterMerchantProducts(List<Product> products, String query) {
-  final normalized = query.trim().toLowerCase();
+  final normalized = normalizeSearchText(query.trim());
   if (normalized.isEmpty) return products;
   return products
       .where((product) =>
-          product.name.toLowerCase().contains(normalized) ||
-          product.description.toLowerCase().contains(normalized))
+          normalizeSearchText(product.name).contains(normalized) ||
+          normalizeSearchText(product.description).contains(normalized))
       .toList(growable: false);
 }
 

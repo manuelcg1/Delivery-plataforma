@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/app_exception.dart';
 import '../../../core/providers.dart';
+import '../../legal/legal_documents.dart';
 import 'auth_controller.dart';
 
 const _navy = Color(0xFF06163A);
@@ -32,6 +33,7 @@ class _AuthPageState extends ConsumerState<AuthPage>
   late final AnimationController entrance;
   bool register = false;
   bool obscurePassword = true;
+  bool acceptedLegal = false;
 
   @override
   void initState() {
@@ -68,6 +70,11 @@ class _AuthPageState extends ConsumerState<AuthPage>
       }
       if (first.text.trim().isEmpty || last.text.trim().isEmpty) {
         setState(() => validationError = 'Ingresa tu nombre y apellido.');
+        return;
+      }
+      if (!acceptedLegal) {
+        setState(() => validationError =
+            'Acepta los Términos y Condiciones y la Política de Privacidad para continuar.');
         return;
       }
       final result = await ref.read(authControllerProvider.notifier).register(
@@ -127,6 +134,9 @@ class _AuthPageState extends ConsumerState<AuthPage>
               phone: phone,
               profile: profile,
               onProfileChanged: (value) => setState(() => profile = value),
+              acceptedLegal: acceptedLegal,
+              onAcceptedLegalChanged: (value) =>
+                  setState(() => acceptedLegal = value),
               registrationMessage: registrationMessage,
               first: first,
               last: last,
@@ -294,6 +304,8 @@ class _AuthFormCard extends StatelessWidget {
     required this.phone,
     required this.profile,
     required this.onProfileChanged,
+    required this.acceptedLegal,
+    required this.onAcceptedLegalChanged,
     required this.registrationMessage,
     required this.first,
     required this.last,
@@ -311,6 +323,8 @@ class _AuthFormCard extends StatelessWidget {
   final TextEditingController phone, first, last, email, password;
   final String profile;
   final ValueChanged<String> onProfileChanged;
+  final bool acceptedLegal;
+  final ValueChanged<bool> onAcceptedLegalChanged;
   final String? registrationMessage;
   final Object? error;
   final String apiBaseUrl;
@@ -465,6 +479,13 @@ class _AuthFormCard extends StatelessWidget {
                               fontWeight: FontWeight.w600)),
                     ),
                   ),
+                if (register) ...[
+                  const SizedBox(height: 8),
+                  _LegalAcceptance(
+                    accepted: acceptedLegal,
+                    onChanged: onAcceptedLegalChanged,
+                  ),
+                ],
                 if (registrationMessage != null) ...[
                   const SizedBox(height: 12),
                   Semantics(
@@ -684,6 +705,62 @@ class _PrimaryAuthButton extends StatelessWidget {
                   : Text(label, key: ValueKey(label)),
             ),
           ),
+        ),
+      );
+}
+
+class _LegalAcceptance extends StatelessWidget {
+  const _LegalAcceptance({required this.accepted, required this.onChanged});
+  final bool accepted;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Checkbox(
+            key: const Key('legal-acceptance'),
+            value: accepted,
+            onChanged: (value) => onChanged(value ?? false),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: () => onChanged(!accepted),
+                    child: const Text('Acepto los '),
+                  ),
+                  const _LegalLink(
+                      label: 'Términos y Condiciones', slug: termsSlug),
+                  const Text(' y la '),
+                  const _LegalLink(
+                      label: 'Política de Privacidad', slug: privacySlug),
+                  const Text('.'),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+}
+
+class _LegalLink extends StatelessWidget {
+  const _LegalLink({required this.label, required this.slug});
+  final String label, slug;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        link: true,
+        child: InkWell(
+          onTap: () => openLegalDocument(context, slug, label),
+          child: Text(label,
+              style: const TextStyle(
+                  color: _orange,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline)),
         ),
       );
 }
