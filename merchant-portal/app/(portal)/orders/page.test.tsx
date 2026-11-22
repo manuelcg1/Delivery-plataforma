@@ -167,9 +167,9 @@ describe('opciones del pedido',()=>{
 
 describe('detalle de asignación del pedido',()=>{
   it.each([
-    ['ACCEPTED','Entrega aceptada por el repartidor.'],
-    ['REJECTED','Entrega rechazada por el repartidor.'],
-  ])('actualiza el mensaje abierto cuando la asignación cambia a %s',async(status,message)=>{
+    ['ACCEPTED','Entrega aceptada por el repartidor.','Aceptado por el repartidor'],
+    ['REJECTED','Entrega rechazada por el repartidor.','Rechazado por el repartidor'],
+  ])('actualiza el mensaje abierto cuando la asignación cambia a %s',async(status,message,label)=>{
     render(createElement(Orders));
     fireEvent.click(await screen.findByRole('button',{name:'Ver detalle'}));
     expect(await screen.findByText(state.message)).toBeInTheDocument();
@@ -180,7 +180,7 @@ describe('detalle de asignación del pedido',()=>{
 
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.queryByText('Pedido enviado al repartidor. Esperando aceptación.')).not.toBeInTheDocument();
-    expect(screen.getByText(status)).toBeInTheDocument();
+    expect(screen.getByText(label)).toBeInTheDocument();
   });
 
   it('actualiza solo la última coordenada del repartidor',async()=>{
