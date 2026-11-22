@@ -61,17 +61,54 @@ public class FirebasePushSender {
         return new Result(accepted, errorCode);
     }
 
+    /** Categoría iOS registrada en la app para mostrar los botones Aceptar/Rechazar. */
+    static final String COURIER_OFFER_CATEGORY = "CERKA_NEW_DELIVERY";
+
+    /**
+     * Las ofertas al repartidor se envían solo con datos en Android: si FCM incluye un bloque
+     * "notification", el sistema la muestra sin botones y la app no puede añadir ACEPTAR/RECHAZAR.
+     * El cierre de una oferta también es silencioso para no mostrar avisos vacíos.
+     */
+    static boolean dataOnly(String type) {
+        return CourierNotificationService.ASSIGNMENT_EVENT.equals(type) || "DELIVERY_ASSIGNMENT_CLOSED".equals(type);
+    }
+
+    static String title(Map<String,String> data) {
+        if (CourierNotificationService.ASSIGNMENT_EVENT.equals(data.get("type")))
+            return "Nuevo pedido · " + data.getOrDefault("merchantName", "Comercio");
+        return data.getOrDefault("title", "Cerka");
+    }
+
+    static String body(Map<String,String> data) {
+        if (CourierNotificationService.ASSIGNMENT_EVENT.equals(data.get("type")))
+            return data.getOrDefault("customerName", "Cliente") + " · " + data.getOrDefault("estimatedDistanceKm", "--")
+                + " km · " + data.getOrDefault("total", "");
+        return data.getOrDefault("body", "");
+    }
+
     static Message message(String token, String eventId, Map<String,Object> payload) {
         Map<String,String> data = new HashMap<>();
         payload.forEach((key,value) -> data.put(key,Objects.toString(value,"")));
         data.put("eventId",eventId);
-        boolean arrival = "COURIER_ARRIVED".equals(data.get("type"));
-        return Message.builder().setToken(token).putAllData(data)
-            .setNotification(Notification.builder().setTitle(data.getOrDefault("title","Cerka"))
-                .setBody(data.getOrDefault("body", "")).build())
+        String type = data.get("type");
+        boolean arrival = "COURIER_ARRIVED".equals(type);
+        Message.Builder builder = Message.builder().setToken(token).putAllData(data);
+        if (dataOnly(type)) {
+            boolean offer = CourierNotificationService.ASSIGNMENT_EVENT.equals(type);
+            Aps.Builder aps = Aps.builder().setContentAvailable(true);
+            if (offer) aps.setAlert(ApsAlert.builder().setTitle(title(data)).setBody(body(data)).build())
+                .setSound("default").setCategory(COURIER_OFFER_CATEGORY);
+            return builder
+                .setAndroidConfig(AndroidConfig.builder().setPriority(AndroidConfig.Priority.HIGH).setTtl(offer ? 900_000L : 300_000L).build())
+                .setApnsConfig(ApnsConfig.builder().putHeader("apns-priority", offer ? "10" : "5")
+                    .putHeader("apns-push-type", offer ? "alert" : "background")
+                    .putHeader("apns-collapse-id",eventId).setAps(aps.build()).build()).build();
+        }
+        return builder
+            .setNotification(Notification.builder().setTitle(title(data)).setBody(body(data)).build())
             .setAndroidConfig(AndroidConfig.builder().setPriority(AndroidConfig.Priority.HIGH).setTtl(900_000L)
                 .setNotification(AndroidNotification.builder()
-                    .setChannelId(arrival ? "CERKA_ORDER_ARRIVAL" : "CERKA_NEW_DELIVERY")
+                    .setChannelId(arrival ? "CERKA_ORDER_ARRIVAL" : data.getOrDefault("channel", "CERKA_NEW_DELIVERY"))
                     .setTag(eventId).setSound("default").setDefaultVibrateTimings(true).build()).build())
             .setApnsConfig(ApnsConfig.builder().putHeader("apns-priority","10")
                 .putHeader("apns-collapse-id",eventId)

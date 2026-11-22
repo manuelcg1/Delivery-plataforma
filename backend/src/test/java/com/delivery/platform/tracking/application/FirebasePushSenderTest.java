@@ -66,4 +66,15 @@ class FirebasePushSenderTest {
         assertThat(send()).isEqualTo(new FirebasePushSender.Result(false,"INVALID_ARGUMENT"));
         assertThat(db.sql("select active from device_tokens").query(Boolean.class).single()).isTrue();
     }
+    @Test void courierOffersAreDataOnlySoTheAppCanShowAcceptAndRejectButtons() {
+        assertThat(FirebasePushSender.dataOnly("NEW_DELIVERY_ASSIGNMENT")).isTrue();
+        assertThat(FirebasePushSender.dataOnly("DELIVERY_ASSIGNMENT_CLOSED")).isTrue();
+        assertThat(FirebasePushSender.dataOnly("COURIER_ARRIVED")).isFalse();
+        assertThat(FirebasePushSender.message("token","e",Map.of("type","NEW_DELIVERY_ASSIGNMENT","deliveryId","d"))).isNotNull();
+    }
+    @Test void offerAlertHasReadableTitleAndBody() {
+        Map<String,String> data=Map.of("type","NEW_DELIVERY_ASSIGNMENT","merchantName","Pollería","customerName","Ana","estimatedDistanceKm","2.4","total","PEN 30.00");
+        assertThat(FirebasePushSender.title(data)).isEqualTo("Nuevo pedido · Pollería");
+        assertThat(FirebasePushSender.body(data)).isEqualTo("Ana · 2.4 km · PEN 30.00");
+    }
 }

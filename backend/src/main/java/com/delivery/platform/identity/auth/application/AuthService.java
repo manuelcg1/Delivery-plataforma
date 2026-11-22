@@ -48,6 +48,7 @@ import java.nio.charset.StandardCharsets; import java.security.*; import java.ti
  @Transactional public Object registerMobile(RegisterMobile q,String ip,String agent){
    String code=mobileTenantCode(), phone=normalizeMobilePhone(q.phone());
    if(q.profile()==null)throw new ApiException(HttpStatus.BAD_REQUEST,"INVALID_PROFILE","Elige Cliente o Repartidor");
+   com.delivery.platform.legal.LegalDocuments.requireCurrent(q.acceptedLegalVersion());
    UUID tenant=db.sql("select id from tenants where code=:code and status='ACTIVE'").param("code",code).query(UUID.class).single();
    String email=q.email().trim().toLowerCase(Locale.ROOT);
    if(db.sql("select exists(select 1 from users where tenant_id=:tenant and lower(email)=:email)").param("tenant",tenant).param("email",email).query(Boolean.class).single())
@@ -60,6 +61,7 @@ import java.nio.charset.StandardCharsets; import java.security.*; import java.ti
        """).param("id",user).param("tenant",tenant).param("identity",identity.id()).param("email",email)
        .param("password",identity.passwordHash()).param("first",q.firstName().trim()).param("last",q.lastName().trim()).param("phone",phone).update();
    linkMembership(user,tenant,identity.id());
+   com.delivery.platform.legal.LegalDocuments.recordAcceptance(db,tenant,user,ip,agent);
    int assigned=db.sql("insert into user_roles(user_id,role_id) select :user,id from roles where tenant_id=:tenant and code=:role and active")
        .param("user",user).param("tenant",tenant).param("role",q.profile().name()).update();
    if(assigned!=1)throw new ApiException(HttpStatus.CONFLICT,"MOBILE_ROLE_MISSING","El perfil solicitado no está configurado");

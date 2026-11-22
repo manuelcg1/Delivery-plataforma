@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -18,7 +19,7 @@ public class CourierDeliveryRouteService {
     }
 
     public RouteView get(UUID deliveryId, IdentityPrincipal principal) {
-        return db.sql("""
+        RouteView route = db.sql("""
                 select d.id delivery_id,d.order_id,d.status,o.order_number,
                        d.address_snapshot->>'recipientName' customer_name,
                        d.address_snapshot->>'phone' customer_phone,
@@ -49,9 +50,24 @@ public class CourierDeliveryRouteService {
                         number(rs, "destination_latitude"), number(rs, "destination_longitude"),
                         rs.getString("route_polyline"), rs.getString("route_provider"),
                         instant(rs, "route_generated_at"), number(rs, "distance_km"),
-                        (Integer) rs.getObject("eta_minutes"))).optional()
+                        (Integer) rs.getObject("eta_minutes"), List.of())).optional()
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "COURIER_ROUTE_NOT_FOUND",
                         "No se encontró la ruta de esta entrega"));
+        return route.withItems(items(principal.tenantId(), route.orderId()));
+    }
+
+    /** Productos para que el repartidor revise el pedido al recogerlo: sin precios. */
+    private List<RouteItem> items(UUID tenant, UUID order) {
+        return db.sql("select id,product_name,quantity,notes from order_items where tenant_id=:t and order_id=:o order by id")
+                .param("t", tenant).param("o", order)
+                .query((rs, row) -> new Object[]{rs.getObject("id", UUID.class), rs.getString("product_name"),
+                        rs.getInt("quantity"), rs.getString("notes")})
+                .list().stream().map(row -> new RouteItem((String) row[1], (Integer) row[2],
+                        db.sql("select group_name,item_name from order_item_options where tenant_id=:t and order_item_id=:i order by created_at")
+                                .param("t", tenant).param("i", row[0])
+                                .query((rs, n) -> new RouteItemOption(rs.getString("group_name"), rs.getString("item_name")))
+                                .list(),
+                        (String) row[3])).toList();
     }
 
     private static Double number(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
@@ -71,5 +87,17 @@ public class CourierDeliveryRouteService {
                             Double originLatitude, Double originLongitude,
                             Double destinationLatitude, Double destinationLongitude, String routePolyline,
                             String routeProvider, Instant routeGeneratedAt, Double distanceKm,
-                            Integer etaMinutes) {}
+                            Integer etaMinutes, List<RouteItem> items) {
+        RouteView withItems(List<RouteItem> value) {
+            return new RouteView(deliveryId, orderId, deliveryStatus, orderNumber, customerName, customerPhone,
+                    destinationAddress, destinationReference, deliveryNotes, merchantName, merchantDisplayName,
+                    branchName, merchantAddress, originLatitude, originLongitude, destinationLatitude,
+                    destinationLongitude, routePolyline, routeProvider, routeGeneratedAt, distanceKm, etaMinutes,
+                    value);
+        }
+    }
+
+    public record RouteItem(String productName, int quantity, List<RouteItemOption> options, String notes) {}
+
+    public record RouteItemOption(String groupName, String itemName) {}
 }

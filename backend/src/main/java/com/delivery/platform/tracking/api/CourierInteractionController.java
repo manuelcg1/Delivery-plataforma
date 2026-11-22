@@ -5,6 +5,7 @@ import com.delivery.platform.tracking.application.CourierInteractionService;
 import com.delivery.platform.tracking.application.CourierInteractionService.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -91,6 +92,20 @@ public class CourierInteractionController {
     List<Message> history(@AuthenticationPrincipal IdentityPrincipal principal, @RequestParam UUID deliveryId,
                           @RequestParam(required = false) String channel) {
         return service.history(principal, deliveryId, channel);
+    }
+
+    public record ChatReadRequest(@NotNull UUID deliveryId) {}
+
+    @GetMapping("/chat/unread")
+    @PreAuthorize("hasAuthority('CHAT_VIEW')")
+    Map<String, Integer> unread(@AuthenticationPrincipal IdentityPrincipal principal, @RequestParam UUID deliveryId) {
+        return Map.of("count", service.unread(principal, deliveryId));
+    }
+
+    @PostMapping("/chat/read")
+    @PreAuthorize("hasAuthority('CHAT_VIEW')")
+    Map<String, Integer> read(@AuthenticationPrincipal IdentityPrincipal principal, @Valid @RequestBody ChatReadRequest request) {
+        return Map.of("updated", service.markRead(principal, request.deliveryId()));
     }
 
     @GetMapping("/notifications")

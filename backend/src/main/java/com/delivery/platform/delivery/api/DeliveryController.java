@@ -1,6 +1,7 @@
 package com.delivery.platform.delivery.api;
 
 import com.delivery.platform.common.PageResponse;
+import com.delivery.platform.delivery.application.DeliveryCodeService;
 import com.delivery.platform.delivery.application.DeliveryCoverageService;
 import com.delivery.platform.delivery.application.DeliveryService;
 import com.delivery.platform.delivery.application.DeliveryService.*;
@@ -21,11 +22,21 @@ import java.util.*;
 public class DeliveryController {
     private final DeliveryService service;
     private final MerchantCourierAssignmentService assignments;
+    private final DeliveryCodeService deliveryCodes;
 
-    public DeliveryController(DeliveryService service, MerchantCourierAssignmentService assignments) {
+    public DeliveryController(DeliveryService service, MerchantCourierAssignmentService assignments,
+                              DeliveryCodeService deliveryCodes) {
         this.service = service;
         this.assignments = assignments;
+        this.deliveryCodes = deliveryCodes;
     }
+
+    public record DeliveryCodeRequest(@NotBlank @Size(max=12) String code) {}
+
+    @GetMapping("/deliveries/{id}/delivery-code") @PreAuthorize("hasAuthority('DELIVERY_UPDATE_STATUS')")
+    DeliveryCodeService.Verification deliveryCodeStatus(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id){return deliveryCodes.status(p,id);}
+    @PostMapping("/deliveries/{id}/delivery-code/verify") @PreAuthorize("hasAuthority('DELIVERY_UPDATE_STATUS')")
+    DeliveryCodeService.Verification verifyDeliveryCode(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id,@Valid @RequestBody DeliveryCodeRequest q){return deliveryCodes.verify(p,id,q.code());}
 
     public record DeliveryQuoteRequest(@NotNull UUID merchantId,@NotNull UUID branchId,@NotNull UUID addressId,@NotNull @PositiveOrZero BigDecimal orderSubtotal) {}
     public record CreateDeliveryRequest(@NotNull Type deliveryType,@Size(max=500) String pickupNotes,@Size(max=500) String deliveryNotes) {}
@@ -52,7 +63,7 @@ public class DeliveryController {
     @PostMapping("/deliveries/{id}/auto-assign") @PreAuthorize("hasAuthority('DELIVERY_ASSIGN')")
     Delivery auto(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id,@RequestHeader("Idempotency-Key") String key){assignments.assignDelivery(p,id,null,"AUTOMATIC",key);return service.one(p,id);}
     @PostMapping({"/deliveries/{id}/status","/deliveries/{id}/accept","/deliveries/{id}/reject","/deliveries/{id}/cancel"}) @PreAuthorize("hasAuthority('DELIVERY_UPDATE_STATUS')")
-    Delivery status(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id,@Valid @RequestBody UpdateDeliveryStatusRequest q){return service.status(p,id,q.status(),q.notes());}
+    Delivery status(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id,@Valid @RequestBody UpdateDeliveryStatusRequest q){Delivery d=service.status(p,id,q.status(),q.notes());if(q.status()==Status.REJECTED){assignments.releaseRejected(p.tenantId(),id);}return d;}
 
     @GetMapping("/couriers") @PreAuthorize("hasAuthority('COURIER_VIEW')") List<Courier> couriers(@AuthenticationPrincipal IdentityPrincipal p){return service.couriers(p,false);}
     @GetMapping("/couriers/available") @PreAuthorize("hasAuthority('COURIER_VIEW')") List<Courier> available(@AuthenticationPrincipal IdentityPrincipal p){return service.couriers(p,true);}
