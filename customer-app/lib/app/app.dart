@@ -14,6 +14,7 @@ import '../features/customer_tracking/presentation/customer_order_tracking_page.
 import '../features/home/presentation/home_page.dart';
 import '../features/orders/presentation/commerce_pages.dart';
 import 'theme/app_theme.dart';
+import '../features/legal/legal_documents.dart';
 import '../core/lifecycle/app_lifecycle_coordinator.dart';
 import '../core/widgets/cart_feedback.dart';
 
@@ -781,6 +782,7 @@ class ProfilePage extends ConsumerWidget {
             ),
           ),
           const Spacer(),
+          const LegalLinks(),
           Center(
             child: TextButton(
               onPressed: () =>

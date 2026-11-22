@@ -1,5 +1,6 @@
 import '../../../core/api/api_client.dart';
 import '../../../core/auth/session_store.dart';
+import '../../legal/legal_documents.dart' show currentLegalVersion;
 
 class SessionUser {
   const SessionUser({
@@ -58,11 +59,13 @@ class AuthRepository {
     required String password,
     required String phone,
     String profile = 'CUSTOMER',
+    String acceptedLegalVersion = currentLegalVersion,
   }) async {
     try {
       final response = await api.dio.post<Map<String, dynamic>>(
         '/api/v1/auth/register-mobile',
         data: {
+          'acceptedLegalVersion': acceptedLegalVersion,
           'firstName': firstName,
           'lastName': lastName,
           'email': email,

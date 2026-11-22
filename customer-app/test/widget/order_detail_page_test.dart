@@ -26,7 +26,8 @@ void main() {
           total: 58,
           currency: 'PEN',
           createdAt: '2026-11-07T17:05:00Z',
-          ratingSubmitted: false);
+          ratingSubmitted: false,
+          deliveryCode: 'K7P3M');
       await tester.pumpWidget(ProviderScope(
           overrides: [
             commerceRepositoryProvider.overrideWithValue(repository),
@@ -40,10 +41,19 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('ORD-123'), findsOneWidget);
       expect(find.text('PEN 58.00'), findsOneWidget);
+      final active = !['DELIVERED', 'CANCELLED'].contains(status);
+      expect(find.text('K7P3M'), active ? findsOneWidget : findsNothing);
+      expect(
+          find.text(
+              'Por tu seguridad, no compartas tu código de entrega hasta que tu pedido haya llegado.'),
+          active ? findsOneWidget : findsNothing);
       await tester.drag(find.byType(ListView).first, const Offset(0, -500));
       await tester.pumpAndSettle();
-      expect(find.text('Chatear con el repartidor'),
-          status == 'IN_TRANSIT' ? findsOneWidget : findsNothing);
+      expect(
+          find.text('Chatear'),
+          ['IN_TRANSIT', 'ARRIVED_AT_CUSTOMER'].contains(status)
+              ? findsOneWidget
+              : findsNothing);
       expect(
           find.text('Seguir pedido'),
           ['IN_TRANSIT', 'ARRIVED_AT_CUSTOMER'].contains(status)

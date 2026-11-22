@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' show DartPluginRegistrant;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -37,20 +38,50 @@ Future<void> courierFirebaseBackgroundHandler(RemoteMessage message) async {
 @pragma('vm:entry-point')
 Future<void> courierNotificationActionBackground(
     NotificationResponse response) async {
+  // Isolate en segundo plano: sin esto, plugins como flutter_secure_storage
+  // (donde vive la sesión) no están registrados y la respuesta falla en silencio.
   WidgetsFlutterBinding.ensureInitialized();
-  final payload = response.payload == null
-      ? null
-      : jsonDecode(response.payload!) as Map<String, dynamic>;
-  final id = payload?['deliveryId']?.toString();
-  if (id == null || !const {'ACCEPT', 'REJECT'}.contains(response.actionId))
-    return;
+  DartPluginRegistrant.ensureInitialized();
+  final id = courierOfferDeliveryId(response.payload);
+  final status = courierOfferResponseStatus(response.actionId);
+  if (id == null || status == null) return;
   const store = SessionStore(FlutterSecureStorage(
       aOptions: AndroidOptions(encryptedSharedPreferences: true)));
   final api = ApiClient(AppConfig.fromEnvironment().apiBaseUrl, store);
-  await CourierRepository(api).updateDelivery(
-      id, response.actionId == 'ACCEPT' ? 'ACCEPTED' : 'REJECTED');
-  await CourierNotificationService.cancelLocal(id);
+  await CourierNotificationService.submitOfferResponse(
+      CourierRepository(api), id, status);
 }
+
+/// Categoría iOS con los botones Aceptar/Rechazar (debe coincidir con el backend).
+const courierOfferCategory = assignmentChannel;
+
+/// Traduce la acción de la notificación al estado de la entrega.
+String? courierOfferResponseStatus(String? actionId) => switch (actionId) {
+      'ACCEPT' => 'ACCEPTED',
+      'REJECT' => 'REJECTED',
+      _ => null,
+    };
+
+String? courierOfferDeliveryId(String? payload) {
+  if (payload == null) return null;
+  try {
+    return (jsonDecode(payload) as Map<String, dynamic>)['deliveryId']
+        ?.toString();
+  } catch (_) {
+    return null;
+  }
+}
+
+final courierNotificationInitializationSettings = InitializationSettings(
+  android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
+  iOS: DarwinInitializationSettings(notificationCategories: [
+    DarwinNotificationCategory(courierOfferCategory, actions: [
+      DarwinNotificationAction.plain('ACCEPT', 'Aceptar'),
+      DarwinNotificationAction.plain('REJECT', 'Rechazar',
+          options: {DarwinNotificationActionOption.destructive}),
+    ]),
+  ]),
+);
 
 class CourierNotificationService {
   CourierNotificationService(this.api, this.repository, {this.onOpenDelivery});
@@ -73,10 +104,7 @@ class CourierNotificationService {
   );
   Future<void> initialize() async {
     await local.initialize(
-      const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-      ),
+      courierNotificationInitializationSettings,
       onDidReceiveNotificationResponse: _action,
       onDidReceiveBackgroundNotificationResponse:
           courierNotificationActionBackground,
@@ -181,20 +209,20 @@ class CourierNotificationService {
               ],
             ),
             iOS: const DarwinNotificationDetails(
-                presentAlert: true, presentBadge: true, presentSound: true)),
+                presentAlert: true,
+                presentBadge: true,
+                presentSound: true,
+                categoryIdentifier: courierOfferCategory)),
         payload: jsonEncode({'deliveryId': id}));
   }
 
   Future<void> _action(NotificationResponse response) async {
-    final payload = response.payload == null
-        ? null
-        : jsonDecode(response.payload!) as Map<String, dynamic>;
-    final id = payload?['deliveryId']?.toString();
+    final id = courierOfferDeliveryId(response.payload);
     if (id == null) return;
-    if (response.actionId == 'ACCEPT' || response.actionId == 'REJECT') {
-      await repository.updateDelivery(
-          id, response.actionId == 'ACCEPT' ? 'ACCEPTED' : 'REJECTED');
-      await cancel(id);
+    final status = courierOfferResponseStatus(response.actionId);
+    if (status != null) {
+      final ok = await submitOfferResponse(repository, id, status);
+      if (ok) handled.remove('$assignmentEvent:$id');
     } else {
       await onOpenDelivery?.call(id);
     }
@@ -209,13 +237,47 @@ class CourierNotificationService {
       value.codeUnits.fold(0, (hash, c) => 0x1fffffff & (hash * 31 + c));
   static Future<void> cancelLocal(String deliveryId) =>
       FlutterLocalNotificationsPlugin().cancel(notificationId(deliveryId));
+
+  /// Envía la respuesta del repartidor. Si falla, deja un aviso claro en
+  /// lugar de fallar en silencio, y la oferta sigue visible para reintentar.
+  static Future<bool> submitOfferResponse(
+      CourierRepository repository, String deliveryId, String status) async {
+    try {
+      await repository.updateDelivery(deliveryId, status);
+      await cancelLocal(deliveryId);
+      return true;
+    } catch (_) {
+      try {
+        await FlutterLocalNotificationsPlugin().show(
+            notificationId('failed:$deliveryId'),
+            'No pudimos registrar tu respuesta',
+            'Abre la app para ${status == 'ACCEPTED' ? 'aceptar' : 'rechazar'} el pedido. Es posible que la oferta haya vencido.',
+            const NotificationDetails(
+                android: AndroidNotificationDetails(
+                    assignmentChannel, 'Nuevos pedidos',
+                    channelDescription: 'Ofertas urgentes de entrega',
+                    importance: Importance.high,
+                    priority: Priority.high),
+                iOS: DarwinNotificationDetails(presentAlert: true)),
+            payload: jsonEncode({'deliveryId': deliveryId}));
+      } catch (_) {}
+      return false;
+    }
+  }
+
   static Future<void> showBackground(Map<String, dynamic> data) async {
     final plugin = FlutterLocalNotificationsPlugin();
-    await plugin.initialize(const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings()));
+    // Se vuelve a registrar el callback de acciones: el isolate de FCM
+    // inicializa el plugin y, sin él, ACEPTAR/RECHAZAR no tenían a quién llamar.
+    await plugin.initialize(courierNotificationInitializationSettings,
+        onDidReceiveBackgroundNotificationResponse:
+            courierNotificationActionBackground);
     final deliveryId = data['deliveryId']?.toString();
     if (deliveryId == null) return;
+    if (data['type'] == 'DELIVERY_ASSIGNMENT_CLOSED') {
+      await plugin.cancel(notificationId(deliveryId));
+      return;
+    }
     if (data['type'] != assignmentEvent) return;
     final merchant = data['merchantName']?.toString() ?? 'Comercio';
     final body =

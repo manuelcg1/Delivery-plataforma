@@ -22,6 +22,7 @@ public class MerchantPortalController {
     public record Transition(@NotBlank String status, @PositiveOrZero int expectedVersion, @Size(max=500) String reason) {}
     public record Pause(@Min(1) @Max(1440) Integer minutes, @Size(max=255) String reason) {}
     public record ManualAssignment(@NotNull UUID courierId) {}
+    public record AssignmentChange(UUID courierId,@jakarta.validation.constraints.Size(max=300) String reason) {}
 
     @GetMapping("/context")
     @PreAuthorize("hasAuthority('MERCHANT_PORTAL_ACCESS')")
@@ -59,6 +60,14 @@ public class MerchantPortalController {
     @PostMapping("/orders/{id}/delivery/manual-assign")
     @PreAuthorize("hasAuthority('MERCHANT_DELIVERY_ASSIGN')")
     MerchantCourierAssignmentService.AssignmentInfo manualAssign(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id,@Valid @RequestBody ManualAssignment q){return couriers.manualAssign(p,id,q.courierId());}
+
+    @PostMapping("/orders/{id}/delivery/cancel-assignment")
+    @PreAuthorize("hasAuthority('MERCHANT_DELIVERY_ASSIGN')")
+    MerchantCourierAssignmentService.AssignmentInfo cancelAssignment(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id,@Valid @RequestBody(required=false) AssignmentChange q){return couriers.cancelAssignment(p,id,q==null?null:q.reason());}
+
+    @PostMapping("/orders/{id}/delivery/reassign")
+    @PreAuthorize("hasAuthority('MERCHANT_DELIVERY_ASSIGN')")
+    MerchantCourierAssignmentService.AssignmentInfo reassign(@AuthenticationPrincipal IdentityPrincipal p,@PathVariable UUID id,@Valid @RequestBody(required=false) AssignmentChange q){return couriers.reassign(p,id,q==null?null:q.courierId(),q==null?null:q.reason());}
 
     @PostMapping("/orders/{id}/hand-to-courier")
     @PreAuthorize("hasAuthority('MERCHANT_ORDER_HAND_TO_COURIER')")

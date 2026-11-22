@@ -21,20 +21,26 @@ import java.util.UUID;
 public class CourierInteractionService {
     public record Proof(UUID id, UUID deliveryId, String proofType, String url, String comments, Instant createdAt) {}
     public record TemporaryCode(String value, Instant expiresAt) {}
-    public record Message(UUID id, UUID deliveryId, UUID senderId, String senderType, String channel, String message, Instant createdAt) {}
+    public record Message(UUID id, UUID deliveryId, UUID senderId, String senderType, String channel, String message, Instant createdAt, Instant readAt) {}
     public record Notification(UUID id, UUID deliveryId, String deliveryStatus, String eventType, String title, String body, String status, Instant createdAt) {}
 
     private final JdbcClient db;
     private final ProofStorage storage;
     private final PasswordEncoder passwords;
     private final RealtimeGateway realtime;
+    private final CourierNotificationService notifications;
     private final SecureRandom random = new SecureRandom();
 
-    public CourierInteractionService(JdbcClient db, ProofStorage storage, PasswordEncoder passwords, RealtimeGateway realtime) {
+    /** El chat cliente-repartidor se habilita cuando el pedido va "En camino" y sigue al llegar. */
+    static final java.util.Set<String> CHAT_OPEN_STATUSES = java.util.Set.of("IN_TRANSIT", "ARRIVED_AT_CUSTOMER");
+
+    public CourierInteractionService(JdbcClient db, ProofStorage storage, PasswordEncoder passwords, RealtimeGateway realtime,
+                                     CourierNotificationService notifications) {
         this.db = db;
         this.storage = storage;
         this.passwords = passwords;
         this.realtime = realtime;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -61,7 +67,11 @@ public class CourierInteractionService {
 
     @Transactional
     public TemporaryCode createOtp(IdentityPrincipal principal, UUID orderId) {
-        UUID deliveryId = delivery(principal, orderId);
+        // Solo el cliente puede generar el código; el repartidor nunca debe poder leerlo.
+        UUID deliveryId = db.sql("select id from deliveries where tenant_id=:t and order_id=:o and customer_id=:u order by created_at desc limit 1")
+                .param("t", principal.tenantId()).param("o", orderId).param("u", principal.userId())
+                .query(UUID.class).optional()
+                .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "DELIVERY_NOT_FOUND", "Entrega no encontrada"));
         String code = "%06d".formatted(random.nextInt(1_000_000));
         Instant expires = Instant.now().plus(10, ChronoUnit.MINUTES);
         db.sql("insert into otp_codes(tenant_id,delivery_id,code_hash,expires_at) values(:t,:d,:h,:e)")
@@ -69,13 +79,15 @@ public class CourierInteractionService {
         return new TemporaryCode(code, expires);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = ApiException.class)
     public void validateOtp(IdentityPrincipal principal, UUID orderId, String code) {
         UUID deliveryId = delivery(principal, orderId);
-        Object[] otp = db.sql("select id,code_hash from otp_codes where tenant_id=:t and delivery_id=:d and validated_at is null and expires_at>now() order by created_at desc limit 1")
+        Object[] otp = db.sql("select id,code_hash,attempts from otp_codes where tenant_id=:t and delivery_id=:d and validated_at is null and expires_at>now() order by created_at desc limit 1 for update")
                 .param("t", principal.tenantId()).param("d", deliveryId)
-                .query((r, n) -> new Object[]{r.getObject("id", UUID.class), r.getString("code_hash")}).optional()
+                .query((r, n) -> new Object[]{r.getObject("id", UUID.class), r.getString("code_hash"), r.getInt("attempts")}).optional()
                 .orElseThrow(() -> error(HttpStatus.CONFLICT, "OTP_EXPIRED", "El código OTP no existe o expiró"));
+        if ((Integer) otp[2] >= 5)
+            throw error(HttpStatus.TOO_MANY_REQUESTS, "OTP_LOCKED", "Demasiados intentos con este código OTP");
         db.sql("update otp_codes set attempts=attempts+1 where id=:i").param("i", otp[0]).update();
         if (!passwords.matches(code, (String) otp[1]))
             throw error(HttpStatus.CONFLICT, "OTP_INVALID", "El código OTP es incorrecto");
@@ -114,12 +126,23 @@ public class CourierInteractionService {
         if (!List.of("CUSTOMER_COURIER", "MERCHANT_COURIER").contains(channel))
             throw error(HttpStatus.BAD_REQUEST, "CHAT_CHANNEL_INVALID", "Canal de chat no válido");
         String senderType = senderType(principal, deliveryId);
+        Object[] chat = db.sql("select d.status,d.order_id,d.customer_id,c.user_id from deliveries d left join courier_profiles c on c.id=d.courier_id and c.tenant_id=d.tenant_id where d.id=:d and d.tenant_id=:t")
+                .param("d", deliveryId).param("t", principal.tenantId())
+                .query((r, n) -> new Object[]{r.getString(1), r.getObject(2, UUID.class), r.getObject(3, UUID.class), r.getObject(4, UUID.class)})
+                .single();
+        if ("CUSTOMER_COURIER".equals(channel) && !CHAT_OPEN_STATUSES.contains((String) chat[0]))
+            throw error(HttpStatus.CONFLICT, "CHAT_CLOSED", "El chat se habilita cuando el pedido está en camino");
         UUID id = UUID.randomUUID();
         db.sql("insert into chat_messages(id,tenant_id,delivery_id,sender_id,sender_type,channel,message) values(:i,:t,:d,:u,:s,:c,:m)")
                 .param("i", id).param("t", principal.tenantId()).param("d", deliveryId).param("u", principal.userId())
                 .param("s", senderType).param("c", channel).param("m", text).update();
-        Message message = new Message(id, deliveryId, principal.userId(), senderType, channel, text, Instant.now());
+        Message message = new Message(id, deliveryId, principal.userId(), senderType, channel, text, Instant.now(), null);
         realtime.delivery(principal.tenantId(), deliveryId, "ChatMessageReceived", message);
+        if ("CUSTOMER_COURIER".equals(channel) && notifications != null) {
+            UUID recipient = "COURIER".equals(senderType) ? (UUID) chat[2] : "CUSTOMER".equals(senderType) ? (UUID) chat[3] : null;
+            if (recipient != null && !recipient.equals(principal.userId()))
+                notifications.chatMessage(principal.tenantId(), recipient, deliveryId, (UUID) chat[1], id, senderType, text);
+        }
         return message;
     }
 
@@ -128,7 +151,24 @@ public class CourierInteractionService {
         return db.sql("select * from chat_messages where tenant_id=:t and delivery_id=:d and (cast(:c as varchar) is null or channel=:c) order by created_at")
                 .param("t", principal.tenantId()).param("d", deliveryId).param("c", channel)
                 .query((r, n) -> new Message(r.getObject("id", UUID.class), deliveryId, r.getObject("sender_id", UUID.class),
-                        r.getString("sender_type"), r.getString("channel"), r.getString("message"), r.getTimestamp("created_at").toInstant())).list();
+                        r.getString("sender_type"), r.getString("channel"), r.getString("message"), r.getTimestamp("created_at").toInstant(),
+                        r.getTimestamp("read_at") == null ? null : r.getTimestamp("read_at").toInstant())).list();
+    }
+
+    /** Mensajes del chat cliente-repartidor que escribió la otra persona y aún no se leen. */
+    public int unread(IdentityPrincipal principal, UUID deliveryId) {
+        access(principal, deliveryId);
+        return db.sql("select count(*) from chat_messages where tenant_id=:t and delivery_id=:d and channel='CUSTOMER_COURIER' and read_at is null and sender_id<>:u")
+                .param("t", principal.tenantId()).param("d", deliveryId).param("u", principal.userId())
+                .query(Integer.class).single();
+    }
+
+    /** Marca como leídos los mensajes recibidos; los propios no se tocan. */
+    @Transactional
+    public int markRead(IdentityPrincipal principal, UUID deliveryId) {
+        access(principal, deliveryId);
+        return db.sql("update chat_messages set read_at=now() where tenant_id=:t and delivery_id=:d and channel='CUSTOMER_COURIER' and read_at is null and sender_id<>:u")
+                .param("t", principal.tenantId()).param("d", deliveryId).param("u", principal.userId()).update();
     }
 
     public List<Notification> notifications(IdentityPrincipal principal) {

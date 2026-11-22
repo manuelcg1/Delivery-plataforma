@@ -106,6 +106,33 @@ public class CourierNotificationService {
         events.publishEvent(new PushDispatch(tenant,courierUser,"closed:"+deliveryId,payload));
     }
 
+    public static final String CHAT_EVENT = "CHAT_MESSAGE";
+
+    /** Avisa por push (y en la bandeja de la app) que llegó un mensaje del chat de la entrega. */
+    public void chatMessage(UUID tenant, UUID recipient, UUID deliveryId, UUID orderId, UUID messageId,
+                            String senderType, String text) {
+        if (recipient == null) return;
+        String title = "COURIER".equals(senderType) ? "Nuevo mensaje del repartidor" : "Nuevo mensaje del cliente";
+        String body = text.length() > 120 ? text.substring(0, 117) + "…" : text;
+        String key = CHAT_EVENT + ":" + messageId;
+        db.sql("""
+          insert into notifications(tenant_id,user_id,delivery_id,event_type,title,body,channel,status,sent_at,deduplication_key)
+          values(:t,:u,:d,:event,:title,:body,'FCM','PENDING',null,:key)
+          on conflict(tenant_id,user_id,deduplication_key) where deduplication_key is not null do nothing
+          """).param("t",tenant).param("u",recipient).param("d",deliveryId).param("event",CHAT_EVENT)
+          .param("title",title).param("body",body).param("key",key).update();
+        Map<String,Object> payload = new HashMap<>();
+        payload.put("type", CHAT_EVENT);
+        payload.put("deliveryId", deliveryId);
+        payload.put("orderId", orderId);
+        payload.put("senderType", senderType);
+        payload.put("title", title);
+        payload.put("body", body);
+        payload.put("channel", "CERKA_CHAT");
+        payload.put("eventId", key);
+        events.publishEvent(new PushDispatch(tenant, recipient, key, payload));
+    }
+
     /** Reconciles closed assignments and retries transient push failures. */
     @Scheduled(fixedDelay = 5000)
     @Transactional
@@ -191,17 +218,7 @@ public class CourierNotificationService {
             return;
         }
         for(String token:tokens) try {
-            Map<String,String> data=new HashMap<>(); values.forEach((k,v)->data.put(k,Objects.toString(v,"")));
-            data.put("eventId",eventId);
-            Message message=Message.builder().setToken(token).putAllData(data)
-              .setNotification(Notification.builder().setTitle(Objects.toString(values.get("title"),"Cerka"))
-                .setBody(Objects.toString(values.get("body"),"")).build())
-              .setAndroidConfig(AndroidConfig.builder().setPriority(AndroidConfig.Priority.HIGH).setTtl(900_000L)
-                .setNotification(AndroidNotification.builder().setChannelId(
-                  "COURIER_ARRIVED".equals(values.get("type"))?"CERKA_ORDER_ARRIVAL":"CERKA_NEW_DELIVERY")
-                  .setSound("default").setDefaultVibrateTimings(true).build()).build())
-              .setApnsConfig(ApnsConfig.builder().putHeader("apns-priority","10")
-                .setAps(Aps.builder().setContentAvailable(true).build()).build()).build();
+            Message message=FirebasePushSender.message(token,eventId,values);
             messaging.send(message);
             log.info("Push delivered tenant={} user={} event={}",tenant,user,eventId);
             if(eventId.startsWith("COURIER_ARRIVED:")) metrics.counter("courier_arrival_push_sent_total").increment();

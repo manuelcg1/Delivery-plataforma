@@ -42,7 +42,7 @@ class MobileRegistrationPostgresTest {
         db.sql("insert into tenants(id,code,name) values(?,'mobile-default','Default'),(?,'mobile-other','Other')").params(tenant,other).update();
     }
     @AfterEach void cleanup(){if(database!=null&&database.matches("delivery_mobile_test_[a-f0-9]{32}"))admin.sql("drop database "+database+" with(force)").update();}
-    Object register(String email,MobileProfile profile){return tx.execute(s->service.registerMobile(new RegisterMobile("Ana","Cliente",email,"test-password-123","987 654-321",profile),"test","test"));}
+    Object register(String email,MobileProfile profile){return tx.execute(s->service.registerMobile(new RegisterMobile("Ana","Cliente",email,"test-password-123","987 654-321",profile,com.delivery.platform.legal.LegalDocuments.CURRENT_VERSION),"test","test"));}
     @Test void customerPhoneAndServerTenantArePreservedAndAdministrativeLoginIsUnchanged(){
         var result=(AuthService.Session)register("customer@example.test",MobileProfile.CUSTOMER);
         var user=jwt.parse(result.response().accessToken());

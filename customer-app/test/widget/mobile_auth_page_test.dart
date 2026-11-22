@@ -103,6 +103,13 @@ void main() {
     await tester.ensureVisible(find.text('Registrarme'));
     await tester.tap(find.text('Registrarme'));
     await tester.pumpAndSettle();
+    expect(find.textContaining('Acepta los Términos y Condiciones'),
+        findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('legal-acceptance')));
+    await tester.tap(find.byKey(const Key('legal-acceptance')));
+    await tester.ensureVisible(find.text('Registrarme'));
+    await tester.tap(find.text('Registrarme'));
+    await tester.pumpAndSettle();
     expect(find.text('Iniciar sesión'), findsOneWidget);
     expect(find.textContaining('pendiente de activación'), findsOneWidget);
     final fields =

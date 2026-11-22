@@ -9,6 +9,9 @@ import '../data/courier_repository.dart';
 import '../notifications/courier_notification_service.dart';
 import '../tracking/domain/tracking_policy.dart';
 import '../tracking/presentation/courier_tracking_controller.dart';
+import '../../chat/presentation/delivery_chat_page.dart';
+import '../../legal/legal_documents.dart';
+import 'courier_delivery_code_section.dart';
 import 'courier_route_section.dart';
 
 final courierRepositoryProvider = Provider(
@@ -790,10 +793,41 @@ class CourierDeliveryPage extends ConsumerStatefulWidget {
       _CourierDeliveryPageState();
 }
 
+/// "Pedido entregado" solo se habilita cuando el código del cliente fue validado.
+bool canAdvanceCourierDelivery(String status, {required bool codeVerified}) {
+  if (status == 'IN_TRANSIT') return false;
+  if (status == 'ARRIVED_AT_CUSTOMER') return codeVerified;
+  return true;
+}
+
 class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
   late CourierDelivery delivery = widget.delivery;
   late Future<List<CourierDeliveryHistory>> history;
   bool busy = false;
+  bool codeVerified = false;
+  String? codeCheckedFor;
+
+  /// Mensajes del cliente sin leer (aviso sobre "Chatear").
+  int chatUnread = 0;
+  Timer? chatTimer;
+
+  Future<void> refreshUnread() async {
+    if (!isDeliveryChatOpen(delivery.status)) return;
+    try {
+      final count = await ref
+          .read(courierRepositoryProvider)
+          .unreadChatMessages(delivery.id);
+      if (mounted && count != chatUnread) setState(() => chatUnread = count);
+    } catch (_) {
+      // Se vuelve a consultar en el próximo ciclo.
+    }
+  }
+
+  @override
+  void dispose() {
+    chatTimer?.cancel();
+    super.dispose();
+  }
 
   static const nextStatus = <String, String>{
     'ASSIGNED': 'ACCEPTED',
@@ -806,6 +840,37 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
   void initState() {
     super.initState();
     history = ref.read(courierRepositoryProvider).history(delivery.id);
+    unawaited(loadCodeStatus());
+    unawaited(refreshUnread());
+    chatTimer =
+        Timer.periodic(const Duration(seconds: 8), (_) => refreshUnread());
+  }
+
+  /// Consulta si el código ya fue validado (p. ej. al reabrir la entrega).
+  Future<void> loadCodeStatus() async {
+    if (delivery.status != 'ARRIVED_AT_CUSTOMER' ||
+        codeCheckedFor == delivery.id) return;
+    codeCheckedFor = delivery.id;
+    try {
+      final verified = await ref
+          .read(courierRepositoryProvider)
+          .deliveryCodeVerified(delivery.id);
+      if (mounted) setState(() => codeVerified = verified);
+    } catch (_) {
+      codeCheckedFor = null;
+    }
+  }
+
+  Future<String?> verifyCode(String code) async {
+    try {
+      final verified = await ref
+          .read(courierRepositoryProvider)
+          .verifyDeliveryCode(delivery.id, code);
+      if (mounted) setState(() => codeVerified = verified);
+      return verified ? null : 'No pudimos validar el código.';
+    } catch (error) {
+      return ref.read(apiClientProvider).exception(error).message;
+    }
   }
 
   void refreshHistory() =>
@@ -824,6 +889,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
         const SnackBar(content: Text('Llegada detectada correctamente.')),
       );
     }
+    unawaited(loadCodeStatus());
   }
 
   Future<void> advance() async {
@@ -912,6 +978,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
       delivery =
           await ref.read(courierRepositoryProvider).delivery(delivery.id);
       refreshHistory();
+      unawaited(loadCodeStatus());
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(notified
@@ -951,7 +1018,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Detalle de entrega')),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
           if (const {
             'ASSIGNED',
@@ -960,66 +1027,17 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
             'PICKED_UP',
             'IN_TRANSIT',
             'ARRIVED_AT_CUSTOMER',
-          }.contains(delivery.status)) ...[
+          }.contains(delivery.status))
             CourierRouteSection(
               key: ValueKey('${delivery.id}-${delivery.status}'),
               deliveryId: delivery.id,
               deliveryStatus: delivery.status,
-            ),
-          ],
-          if (shouldContinueTracking(delivery.status)) ...[
-            const SizedBox(height: 16),
-            const _TrackingStatusCard(),
-          ],
-          const SizedBox(height: 24),
-          Text('Progreso de la entrega',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          FutureBuilder<List<CourierDeliveryHistory>>(
-            future: history,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return const LinearProgressIndicator();
-              }
-              final events = (snapshot.data ?? const <CourierDeliveryHistory>[])
-                  .where((event) => const {
-                        'ACCEPTED',
-                        'PICKED_UP',
-                        'IN_TRANSIT',
-                        'DELIVERED',
-                      }.contains(event.status));
-              return Column(
-                children: events
-                    .map((event) => ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const CircleAvatar(
-                            radius: 15,
-                            backgroundColor: Color(0xFFDCFCE7),
-                            child: Icon(Icons.check,
-                                size: 17, color: Color(0xFF15803D)),
-                          ),
-                          title: Text(_statusLabel(event.status)),
-                          subtitle: Text(_dateTime(event.createdAt)),
-                        ))
-                    .toList(),
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-          if (delivery.pickupNotes?.isNotEmpty == true)
-            ListTile(
-              leading: const Icon(Icons.store_outlined),
-              title: const Text('Indicaciones de recojo'),
-              subtitle: Text(delivery.pickupNotes!),
-            ),
-          if (delivery.deliveryNotes?.isNotEmpty == true)
-            ListTile(
-              leading: const Icon(Icons.location_on_outlined),
-              title: const Text('Indicaciones de entrega'),
-              subtitle: Text(delivery.deliveryNotes!),
+              pickupNotes: delivery.pickupNotes,
+              onChat: isDeliveryChatOpen(delivery.status) ? openChat : null,
+              chatUnread: chatUnread,
             ),
           if (delivery.status == 'ASSIGNED') ...[
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -1027,7 +1045,7 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
                         onPressed: busy ? null : () => respond('REJECTED'),
                         icon: const Icon(Icons.close),
                         label: const Text('Rechazar'))),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                     child: FilledButton.icon(
                         onPressed: busy ? null : () => respond('ACCEPTED'),
@@ -1036,31 +1054,69 @@ class _CourierDeliveryPageState extends ConsumerState<CourierDeliveryPage> {
               ],
             ),
           ] else if (next != null || delivery.status == 'IN_TRANSIT') ...[
-            const SizedBox(height: 24),
-            if (delivery.status == 'IN_TRANSIT') ...[
-              OutlinedButton.icon(
-                onPressed: busy ? null : markArrived,
-                icon: const Icon(Icons.location_on),
-                label: const Text('Confirmar llegada manualmente'),
+            const SizedBox(height: 12),
+            if (delivery.status == 'ARRIVED_AT_CUSTOMER') ...[
+              CourierDeliveryCodeSection(
+                verified: codeVerified,
+                onVerify: verifyCode,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
             ],
-            FilledButton.icon(
-              onPressed:
-                  busy || delivery.status == 'IN_TRANSIT' ? null : advance,
-              icon: const Icon(Icons.check_circle_outline),
-              label: Text(busy
-                  ? 'Actualizando…'
-                  : delivery.status == 'ARRIVED_AT_CUSTOMER'
-                      ? 'ENTREGAR PEDIDO'
-                      : delivery.status == 'IN_TRANSIT'
-                          ? 'ENTREGAR PEDIDO'
-                          : 'Marcar: ${_statusLabel(next!)}'),
-            ),
+            if (delivery.status == 'IN_TRANSIT')
+              FilledButton.icon(
+                key: const Key('courier-arrival-button'),
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46)),
+                onPressed: busy ? null : markArrived,
+                icon: const Icon(Icons.location_on_outlined),
+                label: Text(busy ? 'Actualizando…' : 'Confirmar llegada'),
+              )
+            else
+              FilledButton.icon(
+                key: const Key('courier-advance-button'),
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46)),
+                onPressed: busy ||
+                        !canAdvanceCourierDelivery(delivery.status,
+                            codeVerified: codeVerified)
+                    ? null
+                    : advance,
+                icon: const Icon(Icons.check_circle_outline),
+                label: Text(busy
+                    ? 'Actualizando…'
+                    : delivery.status == 'ARRIVED_AT_CUSTOMER'
+                        ? 'PEDIDO ENTREGADO'
+                        : 'Marcar: ${_statusLabel(next!)}'),
+              ),
+          ],
+          if (shouldContinueTracking(delivery.status)) ...[
+            const SizedBox(height: 10),
+            const _TrackingStatusLine(),
           ],
         ],
       ),
     );
+  }
+
+  Future<void> openChat() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) {
+        final repository = ref.read(courierRepositoryProvider);
+        return DeliveryChatPage(
+          title: 'Chat con el cliente',
+          viewerType: 'COURIER',
+          load: () => repository.chatMessages(delivery.id),
+          send: (text) => repository.sendChatMessage(delivery.id, text),
+          markRead: () => repository.markChatRead(delivery.id),
+          errorMessage: (error) =>
+              ref.read(apiClientProvider).exception(error).message,
+        );
+      }),
+    );
+    if (!mounted) return;
+    setState(() => chatUnread = 0);
+    unawaited(refreshUnread());
   }
 }
 
@@ -1072,8 +1128,8 @@ class CourierNotificationsPage extends ConsumerStatefulWidget {
       _CourierNotificationsPageState();
 }
 
-class _TrackingStatusCard extends ConsumerWidget {
-  const _TrackingStatusCard();
+class _TrackingStatusLine extends ConsumerWidget {
+  const _TrackingStatusLine();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1133,31 +1189,33 @@ class _TrackingStatusCard extends ConsumerWidget {
           true,
         ),
     };
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.titleMedium),
-                  Text(detail),
-                ],
-              ),
+    return Semantics(
+      liveRegion: true,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text('$title · $detail',
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: retry ? color : null)),
+          ),
+          if (retry)
+            TextButton(
+              style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8)),
+              onPressed: () => ref
+                  .read(courierTrackingControllerProvider.notifier)
+                  .resumeTracking(),
+              child: const Text('Reintentar'),
             ),
-            if (retry)
-              TextButton(
-                onPressed: () => ref
-                    .read(courierTrackingControllerProvider.notifier)
-                    .resumeTracking(),
-                child: const Text('Reintentar ubicación'),
-              ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -1165,7 +1223,7 @@ class _TrackingStatusCard extends ConsumerWidget {
 
 String _relativeTime(DateTime value) {
   final seconds = DateTime.now().difference(value).inSeconds.clamp(0, 9999);
-  if (seconds < 60) return 'hace $seconds segundos';
+  if (seconds < 60) return 'hace $seconds s';
   return 'hace ${seconds ~/ 60} min';
 }
 
@@ -1705,6 +1763,7 @@ class CourierProfilePage extends ConsumerWidget {
               ),
 
               const Spacer(),
+              const LegalLinks(),
 
               // =========================
               // CERRAR SESIÓN

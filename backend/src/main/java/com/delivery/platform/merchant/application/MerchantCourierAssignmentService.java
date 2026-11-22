@@ -177,6 +177,76 @@ public class MerchantCourierAssignmentService {
         return info(p,orderId);
     }
 
+    public static final String CANCELLED_BY_MERCHANT = "Asignación cancelada por el comercio.";
+    private static final java.util.Set<String> CANCELLABLE_DELIVERY_STATUSES = java.util.Set.of("ASSIGNED","ACCEPTED","ARRIVED_AT_MERCHANT");
+
+    /** El comercio libera al repartidor actual antes de que recoja el pedido. */
+    @Transactional public AssignmentInfo cancelAssignment(IdentityPrincipal p,UUID orderId,String reason) {
+        Scope s=scope(p,orderId);
+        releaseCurrent(p,s,reason);
+        return info(p,orderId);
+    }
+
+    /** Cancela la asignación vigente y envía el pedido a otro repartidor (o al mejor disponible) en una sola operación. */
+    @Transactional public AssignmentInfo reassign(IdentityPrincipal p,UUID orderId,UUID courier,String reason) {
+        Scope s=scope(p,orderId);
+        UUID previous=releaseCurrent(p,s,reason);
+        if(courier!=null&&courier.equals(previous))
+            throw conflict("SAME_COURIER","Selecciona un repartidor distinto al actual.");
+        UUID target=courier!=null?courier:assignmentStrategy.selectExcluding(p.tenantId(),s.branchId(),null,previous)
+            .orElseThrow(()->conflict("COURIER_NOT_AVAILABLE","No se encontraron otros repartidores disponibles."));
+        Scope refreshed=findScope(p,orderId);
+        return assign(p,refreshed,target,courier!=null?"MANUAL":"AUTOMATIC",UUID.randomUUID().toString(),true);
+    }
+
+    /** Libera de inmediato una asignación que el repartidor acaba de rechazar. */
+    @Transactional public void releaseRejected(UUID tenant,UUID deliveryId) {
+        db.sql("select id from delivery_assignments where tenant_id=:tenant and delivery_id=:delivery and status='REJECTED' and result_message is distinct from :message for update skip locked")
+            .param("tenant",tenant).param("delivery",deliveryId).param("message",NOT_ACCEPTED).query(UUID.class).list()
+            .forEach(id->restore(id,"REJECTED"));
+    }
+
+    private UUID releaseCurrent(IdentityPrincipal p,Scope s,String reason) {
+        if(s.deliveryId()==null)throw conflict("ASSIGNMENT_NOT_FOUND","El pedido no tiene un repartidor asignado.");
+        String deliveryStatus=db.sql("select status from deliveries where id=:delivery and tenant_id=:tenant for update")
+            .param("delivery",s.deliveryId()).param("tenant",p.tenantId()).query(String.class).optional()
+            .orElseThrow(()->conflict("DELIVERY_NOT_FOUND","Entrega no encontrada."));
+        Object[] current=db.sql("""
+            select a.id,a.courier_id,a.previous_order_status,c.user_id from delivery_assignments a
+            join courier_profiles c on c.id=a.courier_id and c.tenant_id=a.tenant_id
+            where a.tenant_id=:tenant and a.delivery_id=:delivery and a.status in('PENDING','ACCEPTED')
+            order by a.assigned_at desc limit 1 for update of a
+            """).param("tenant",p.tenantId()).param("delivery",s.deliveryId())
+            .query((r,n)->new Object[]{r.getObject(1,UUID.class),r.getObject(2,UUID.class),r.getString(3),r.getObject(4,UUID.class)})
+            .optional().orElseThrow(()->conflict("ASSIGNMENT_NOT_FOUND","El pedido no tiene un repartidor asignado."));
+        if(!isCancellableDeliveryStatus(deliveryStatus))
+            throw conflict("ASSIGNMENT_NOT_CANCELLABLE","El repartidor ya recogió el pedido; no se puede cancelar ni reasignar.");
+        UUID assignmentId=(UUID)current[0],courier=(UUID)current[1],courierUser=(UUID)current[3];
+        String previous=current[2]==null?s.orderStatus():(String)current[2];
+        String message=reason==null||reason.isBlank()?CANCELLED_BY_MERCHANT:CANCELLED_BY_MERCHANT+" Motivo: "+reason.trim();
+        db.sql("update delivery_assignments set status='CANCELLED',responded_at=coalesce(responded_at,now()),result_message=:message,rejection_reason=:reason where id=:id")
+            .param("message",message).param("reason",reason).param("id",assignmentId).update();
+        db.sql("update deliveries set courier_id=null,status='PENDING',assigned_at=null,accepted_at=null,version=version+1,updated_at=now() where id=:delivery and tenant_id=:tenant")
+            .param("delivery",s.deliveryId()).param("tenant",p.tenantId()).update();
+        db.sql("insert into delivery_status_history(tenant_id,delivery_id,status,actor_id,actor_type,notes,old_status,correlation_id) values(:tenant,:delivery,'PENDING',:user,'USER',:message,:old,:correlation)")
+            .param("tenant",p.tenantId()).param("delivery",s.deliveryId()).param("user",p.userId()).param("message",message)
+            .param("old",deliveryStatus).param("correlation",assignmentId.toString()).update();
+        db.sql("update orders set status=:status,version=version+1,updated_at=now() where id=:order and tenant_id=:tenant and status not in('PICKED_UP','ON_THE_WAY','DELIVERED','CANCELLED','REJECTED')")
+            .param("status",previous).param("order",s.orderId()).param("tenant",p.tenantId()).update();
+        db.sql("update courier_profiles set current_active_deliveries=greatest(0,current_active_deliveries-1),updated_at=now() where id=:id and tenant_id=:tenant")
+            .param("id",courier).param("tenant",p.tenantId()).update();
+        courierNotifications.cancelled(p.tenantId(),courierUser,s.deliveryId(),"CANCELLED_BY_MERCHANT");
+        audit(p,s,"COURIER_ASSIGNMENT_CANCELLED","MANUAL",courier,s.orderStatus(),previous,"CANCELLED");
+        event(p.tenantId(),s,"COURIER_ASSIGNMENT_CANCELLED");
+        realtime.delivery(p.tenantId(),s.deliveryId(),"CourierUnassigned",
+            Map.of("orderId",s.orderId(),"deliveryId",s.deliveryId(),"status","PENDING"));
+        realtime.customerRefresh(p.tenantId());
+        log.info("Courier assignment cancelled tenant={} order={} delivery={} courier={}",p.tenantId(),s.orderId(),s.deliveryId(),courier);
+        return courier;
+    }
+
+    static boolean isCancellableDeliveryStatus(String status){return CANCELLABLE_DELIVERY_STATUSES.contains(status);}
+
     @Scheduled(fixedDelay=10000)
     @Transactional public void reconcileAssignments() {
         List<UUID> expired=db.sql("select id from delivery_assignments where status='PENDING' and expires_at<=now() for update skip locked").query(UUID.class).list();

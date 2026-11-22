@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
+import '../../orders/data/commerce_repository.dart'
+    show ChatMessage, OrderLineItem;
 
 class CourierProfile {
   const CourierProfile({
@@ -73,6 +75,7 @@ class CourierDeliveryRoute {
     required this.routeProvider,
     required this.distanceKm,
     required this.etaMinutes,
+    this.items = const [],
   });
 
   final String deliveryId, orderId, deliveryStatus, orderNumber;
@@ -84,6 +87,9 @@ class CourierDeliveryRoute {
   final String? routePolyline, routeProvider;
   final double? distanceKm;
   final int? etaMinutes;
+
+  /// Productos para revisar al recoger (sin precios).
+  final List<OrderLineItem> items;
 
   bool get hasDestination =>
       destinationLatitude != null && destinationLongitude != null;
@@ -113,6 +119,10 @@ class CourierDeliveryRoute {
         routeProvider: json['routeProvider']?.toString(),
         distanceKm: (json['distanceKm'] as num?)?.toDouble(),
         etaMinutes: (json['etaMinutes'] as num?)?.toInt(),
+        items: (json['items'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(OrderLineItem.fromJson)
+            .toList(),
       );
 }
 
@@ -220,6 +230,50 @@ class CourierRepository {
       options: Options(headers: {'Idempotency-Key': id}),
     );
     return CourierDelivery.fromJson(response.data!);
+  }
+
+  Future<List<ChatMessage>> chatMessages(String deliveryId) async {
+    final response = await api.dio.get<List<dynamic>>('/api/v1/chat/history',
+        queryParameters: {
+          'deliveryId': deliveryId,
+          'channel': 'CUSTOMER_COURIER'
+        });
+    return response.data!
+        .map((item) => ChatMessage.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<int> unreadChatMessages(String deliveryId) async {
+    final response = await api.dio.get<Map<String, dynamic>>(
+        '/api/v1/chat/unread',
+        queryParameters: {'deliveryId': deliveryId});
+    return (response.data?['count'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<void> markChatRead(String deliveryId) async {
+    await api.dio.post<Map<String, dynamic>>('/api/v1/chat/read',
+        data: {'deliveryId': deliveryId});
+  }
+
+  Future<void> sendChatMessage(String deliveryId, String message) async {
+    await api.dio.post<Map<String, dynamic>>('/api/v1/chat/messages', data: {
+      'deliveryId': deliveryId,
+      'channel': 'CUSTOMER_COURIER',
+      'message': message,
+    });
+  }
+
+  Future<bool> deliveryCodeVerified(String deliveryId) async {
+    final response = await api.dio.get<Map<String, dynamic>>(
+        '/api/v1/deliveries/$deliveryId/delivery-code');
+    return response.data?['verified'] == true;
+  }
+
+  Future<bool> verifyDeliveryCode(String deliveryId, String code) async {
+    final response = await api.dio.post<Map<String, dynamic>>(
+        '/api/v1/deliveries/$deliveryId/delivery-code/verify',
+        data: {'code': code});
+    return response.data?['verified'] == true;
   }
 
   Future<bool> markArrived(String orderId) async {
